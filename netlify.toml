@@ -1,0 +1,13 @@
+# PrepStack: Vite build + Netlify Functions (the Claude API key lives on the server only).
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
