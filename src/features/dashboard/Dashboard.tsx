@@ -54,15 +54,15 @@ export default function Dashboard() {
   return (
     <div className="page">
       <div className="row between page-head">
-        <div><h1>שלום {profile.display_name}</h1><p className="muted">{profile.answers.role_title}{daysLeft != null && daysLeft >= 0 ? ` · ${daysLeft} ימים לראיון` : ""}</p></div>
-        {next && <Link className="btn primary" to={`/lesson/${next.id}`}>השיעור הבא: {next.title}</Link>}
+        <div><span className="eyebrow">לוח בקרה</span><h1>שלום {profile.display_name}</h1><p className="muted">{profile.answers.role_title}{daysLeft != null && daysLeft >= 0 ? ` · ${daysLeft} ימים לראיון` : ""}</p></div>
+        {next && <Link className="btn primary next-btn" to={`/lesson/${next.id}`}><span><small>השיעור הבא</small>{next.title}</span></Link>}
       </div>
 
       <div className="stats">
-        <div className="card stat"><ScoreRing score={readiness} size={84} /><div><b>מוכנות לראיון</b><small className="muted">ממוצע השליטה בנושאי התוכנית, לפי חשיבות</small></div></div>
-        <div className="card stat"><div className="big-num">{week.length}</div><div><b>שיעורים השבוע</b><small className="muted">{weekAvg != null ? `ציון ממוצע ${weekAvg}` : "עוד לא התחלתם השבוע"}</small></div></div>
-        <div className="card stat"><div className="big-num">{weekMinutes}</div><div><b>דקות למידה השבוע</b><Bar value={(weekMinutes / goalMinutes) * 100} tone="ok" /><small className="muted">יעד: {goalMinutes} דקות</small></div></div>
-        <div className="card stat"><div className="big-num">{days}</div><div><b>ימים ברצף</b><small className="muted">{weekInterviews.length} סימולציות ראיון השבוע</small></div></div>
+        <div className="card stat stat-lead"><ScoreRing score={readiness} size={84} /><div><span className="stat-label">מוכנות לראיון</span><small className="muted">ממוצע השליטה בנושאי התוכנית, לפי חשיבות</small></div></div>
+        <div className="card stat"><div><span className="stat-label">שיעורים השבוע</span><div className="big-num">{week.length}</div><small className="muted">{weekAvg != null ? `ציון ממוצע ${weekAvg}` : "עוד לא התחלתם השבוע"}</small></div></div>
+        <div className="card stat"><div><span className="stat-label">דקות למידה השבוע</span><div className="big-num">{weekMinutes}<small> / {goalMinutes}</small></div><Bar value={(weekMinutes / goalMinutes) * 100} tone="ok" /></div></div>
+        <div className="card stat"><div><span className="stat-label">ימים ברצף</span><div className="big-num">{days}</div><small className="muted">{weekInterviews.length} סימולציות ראיון השבוע</small></div></div>
       </div>
 
       <div className="grid2">
@@ -88,7 +88,7 @@ export default function Dashboard() {
         <section className="card">
           <h3>רמה לפי תחום</h3>
           {modules.length === 0 ? <p className="muted">אין עדיין תוכנית.</p> : modules.map((m) => (
-            <div key={m.track + m.name} className="mod-row"><div className="row between"><span>{m.track === "ai" ? "🤖 " : ""}{m.name}</span><small className="muted">{m.done}/{m.total} נלמדו · שליטה {m.mastery}</small></div><Bar value={m.mastery} /></div>
+            <div key={m.track + m.name} className="mod-row"><div className="row between"><span>{m.name}{m.track === "ai" && <span className="pill hot">AI</span>}</span><small className="muted">{m.done}/{m.total} נלמדו · שליטה {m.mastery}</small></div><Bar value={m.mastery} /></div>
           ))}
         </section>
 

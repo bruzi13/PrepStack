@@ -3,6 +3,7 @@ import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom"
 import { useApp } from "@/app/AppContext";
 import { DEMO } from "@/services/store";
 import { Busy, ErrorBox } from "@/components/ui";
+import { Icon, type IconName } from "@/components/icons";
 import Landing from "@/features/auth/Landing";
 import AuthPage from "@/features/auth/AuthPage";
 import Onboarding from "@/features/onboarding/Onboarding";
@@ -17,10 +18,10 @@ import Settings from "@/features/settings/Settings";
 const LessonPage = lazy(() => import("@/features/lessons/LessonPage"));
 const InterviewRoom = lazy(() => import("@/features/interviews/InterviewRoom"));
 
-const NAV = [
-  ["/", "לוח בקרה", "📊"], ["/plan", "התוכנית שלי", "🗺️"], ["/ai", "AI ואייג'נטים", "🤖"],
-  ["/interviews", "סימולציות ראיון", "🎙️"], ["/jd", "התאמה למשרה", "🎯"], ["/insights", "מה עובד לי", "🧪"], ["/settings", "הגדרות", "⚙️"],
-] as const;
+const NAV: [string, string, IconName][] = [
+  ["/", "לוח בקרה", "dashboard"], ["/plan", "התוכנית שלי", "map"], ["/ai", "AI ואייג'נטים", "spark"],
+  ["/interviews", "סימולציות ראיון", "mic"], ["/jd", "התאמה למשרה", "target"], ["/insights", "מה עובד לי", "flask"], ["/settings", "הגדרות", "gear"],
+];
 
 export default function App() {
   const { user, profile, ready, error } = useApp();
@@ -40,9 +41,10 @@ export default function App() {
   return (
     <div className="shell">
       <aside className="side">
-        <div className="brand">Prep<span>Stack</span></div>
-        <nav>{NAV.map(([to, label, icon]) => <NavLink key={to} to={to} end={to === "/"}><span aria-hidden>{icon}</span>{label}</NavLink>)}</nav>
-        {DEMO && <div className="demo-tag">מצב הדגמה: התוכן לדוגמה והנתונים נשמרים בדפדפן בלבד</div>}
+        <div className="brand"><span className="brand-mark" aria-hidden />Prep<span>Stack</span></div>
+        <nav aria-label="ניווט ראשי">{NAV.map(([to, label, icon]) => <NavLink key={to} to={to} end={to === "/"}><Icon name={icon} />{label}</NavLink>)}</nav>
+        {DEMO && <div className="demo-tag"><b>מצב הדגמה</b>התוכן לדוגמה והנתונים נשמרים בדפדפן בלבד</div>}
+        <div className="side-user"><span className="avatar" aria-hidden>{(profile?.display_name || "?").trim().charAt(0)}</span><span>{profile?.display_name}</span></div>
       </aside>
       <main className="main">
         <Suspense fallback={<Busy label="טוען…" />}>

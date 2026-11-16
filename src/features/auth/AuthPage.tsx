@@ -24,14 +24,14 @@ export default function AuthPage() {
   return (
     <div className="center">
       <form className="card auth" onSubmit={submit}>
-        <Link to="/" className="brand">Prep<span>Stack</span></Link>
+        <Link to="/" className="brand"><span className="brand-mark" aria-hidden />Prep<span>Stack</span></Link>
         <h2>{mode === "up" ? "יצירת חשבון" : mode === "in" ? "התחברות" : "איפוס סיסמה"}</h2>
         {DEMO && <p className="muted">מצב הדגמה: אפשר להזין כל אימייל וסיסמה.</p>}
         {mode === "up" && <label>שם<input required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoComplete="name" /></label>}
         <label>אימייל<input required type="email" dir="ltr" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} autoComplete="email" /></label>
         {mode !== "reset" && <label>סיסמה<input required type="password" dir="ltr" minLength={6} value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} autoComplete={mode === "up" ? "new-password" : "current-password"} /></label>}
         {msg && <div className="error" role="alert">{msg}</div>}
-        <button className="btn primary" disabled={busy}>{busy ? "רגע…" : mode === "up" ? "הרשמה" : mode === "in" ? "כניסה" : "שליחת קישור"}</button>
+        <button className="btn primary big" disabled={busy}>{busy ? "רגע…" : mode === "up" ? "הרשמה" : mode === "in" ? "כניסה" : "שליחת קישור"}</button>
         <div className="auth-links">
           {mode !== "up" && <button type="button" className="link" onClick={() => { setMode("up"); setMsg(""); }}>אין לי חשבון</button>}
           {mode !== "in" && <button type="button" className="link" onClick={() => { setMode("in"); setMsg(""); }}>יש לי חשבון</button>}
