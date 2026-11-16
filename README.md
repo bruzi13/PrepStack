@@ -55,11 +55,11 @@ npm run demo
 4. **משתני סביבה ב-Netlify** (Site configuration, Environment variables):
    - `ANTHROPIC_API_KEY` : מפתח מ-console.anthropic.com
    - `SUPABASE_SERVICE_ROLE_KEY` : מ-Supabase, Project Settings, API (המפתח הסודי, לא ה-anon)
-   - לא חובה: `CLAUDE_MODEL` (ברירת מחדל `claude-opus-5-5`), `AI_DAILY_LIMIT` (ברירת מחדל 60 בקשות AI למשתמש ביום)
+   - לא חובה: `CLAUDE_MODEL` לשיעורים, תוכניות ובדיקות (ברירת מחדל `claude-sonnet-5-5`), `CLAUDE_CHAT_MODEL` למראיין ולמורה (ברירת מחדל `claude-haiku-5-5`), `AI_DAILY_LIMIT` (ברירת מחדל 60 בקשות AI למשתמש ביום)
 5. לפרוס מחדש אחרי הוספת המשתנים.
 
 ### לדעת מראש
 
-- **עלות**: כל תוכנית, שיעור, בדיקה ותור בראיון הם קריאה ל-Claude. המכסה היומית למשתמש מגבילה את זה; אפשר להוזיל עם `CLAUDE_MODEL=claude-sonnet-5-5`.
+- **עלות**: כל תוכנית, שיעור, בדיקה ותור בראיון הם קריאה ל-Claude. המכסה היומית למשתמש מגבילה את זה. למשתמש אחד פעיל זה בערך 2-5$ בחודש. מומלץ לקבוע תקרת הוצאה ב-Anthropic Console.
 - **הרשמה באימייל**: בפרויקט של אמירנט "Confirm email" כבוי, ולכן נרשמים נכנסים מיד בלי מייל אימות. איפוס סיסמה שולח מייל דרך Supabase (מוגבל מאוד בלי SMTP משלכם).
 - **מגבלת זמן**: תור שיחה רץ בפונקציה רגילה (עד כדקה ב-Netlify); כל השאר ברקע (עד 15 דקות).

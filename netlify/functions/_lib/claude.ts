@@ -1,13 +1,17 @@
 import Anthropic from "@anthropic-ai/sdk";
 
-export const MODEL = process.env.CLAUDE_MODEL || "claude-opus-5-5";
+// Lessons, plans, grading and research: a strong model. Live chat (interviewer, tutor, AI pair): a fast, cheap one.
+export const MODEL = process.env.CLAUDE_MODEL || "claude-sonnet-5-5";
+export const CHAT_MODEL = process.env.CLAUDE_CHAT_MODEL || "claude-haiku-5-5";
 export const client = () => new Anthropic(); // reads ANTHROPIC_API_KEY from the environment
 
 type Effort = "low" | "medium" | "high";
 type Json = Record<string, unknown>;
 
 // If the main model declines a request on safety grounds, the API re-runs it on a fallback model.
-const FALLBACK: { betas: Anthropic.AnthropicBeta[]; fallbacks: "default" } = { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" };
+// Haiku has no server-side fallback, so it is only requested for the other models.
+const fallbackFor = (model: string): { betas?: Anthropic.AnthropicBeta[]; fallbacks?: "default" } =>
+  model.startsWith("claude-haiku") ? {} : { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" };
 
 /* ---------- tiny JSON-schema builder (structured outputs need every field required) ---------- */
 export const S = {
@@ -41,7 +45,7 @@ export async function askJson(opts: { system: string; user: string; schema: Json
     system: opts.system,
     messages: [{ role: "user", content: opts.user }],
     output_config: { effort: opts.effort ?? "medium", format: { type: "json_schema", schema: opts.schema } },
-    ...FALLBACK,
+    ...fallbackFor(MODEL),
   });
   const msg = await stream.finalMessage();
   if (msg.stop_reason === "refusal") throw new Error("המודל סירב לבקשה הזו. נסו לנסח אחרת.");
@@ -62,7 +66,7 @@ export async function research(system: string, question: string): Promise<{ note
       messages,
       tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 8 }],
       output_config: { effort: "medium" },
-      ...FALLBACK,
+      ...fallbackFor(MODEL),
     });
     const msg = await stream.finalMessage();
     for (const block of msg.content) {
@@ -82,11 +86,11 @@ export async function research(system: string, question: string): Promise<{ note
 /** Streaming chat turn (interviewer, tutor, AI pair). Yields text as it is written. */
 export function chatStream(system: string, messages: { role: "user" | "assistant"; content: string }[]) {
   return client().beta.messages.stream({
-    model: MODEL,
+    model: CHAT_MODEL,
     max_tokens: 4000,
     system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
     messages,
     output_config: { effort: "low" },
-    ...FALLBACK,
+    ...fallbackFor(CHAT_MODEL),
   });
 }
