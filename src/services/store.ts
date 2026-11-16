@@ -5,7 +5,7 @@ import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@shared/config";
 
 export const DEMO = import.meta.env.VITE_DEMO === "1";
 export const sb: SupabaseClient | null = DEMO ? null : createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: { persistSession: true, autoRefreshToken: true, storageKey: "prepstack-auth" },
+  auth: { persistSession: true, autoRefreshToken: true, storageKey: `prepstack-auth-${new URL(SUPABASE_URL).hostname.split(".")[0]}` }, // per project, so a session from another project is never reused
 });
 
 export interface User { id: string; email: string; name: string }
@@ -27,7 +27,11 @@ export const auth = {
   async current(): Promise<User | null> {
     if (DEMO) return lsGet<User | null>("prep-demo:user", null);
     const { data } = await sb!.auth.getSession();
-    return toUser(data.session?.user);
+    if (!data.session) return null;
+    // The stored session may be stale or belong to another project: confirm it with the auth server.
+    const { data: checked, error } = await sb!.auth.getUser();
+    if (error || !checked.user) { await sb!.auth.signOut({ scope: "local" }); return null; }
+    return toUser(checked.user);
   },
   onChange(cb: (u: User | null) => void): () => void {
     if (DEMO) { demoListeners.push(cb); return () => { demoListeners = demoListeners.filter((x) => x !== cb); }; }
@@ -132,6 +136,7 @@ export const db = {
 };
 
 function dbErr(msg: string): string {
+  if (/JWT|wrong key type|suitable key/i.test(msg)) { sb?.auth.signOut({ scope: "local" }); return "פג תוקף ההתחברות. רעננו את הדף והתחברו מחדש."; }
   if (/does not exist|schema cache/i.test(msg)) return "טבלאות האתר עדיין לא הוקמו בדאטהבייס (צריך להריץ את supabase/schema.sql).";
   if (/fetch|network/i.test(msg)) return "אין חיבור לשרת. בדקו את האינטרנט ונסו שוב.";
   return msg;
