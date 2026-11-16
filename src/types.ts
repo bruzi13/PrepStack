@@ -8,13 +8,13 @@ export interface Answers {
   occupation?: string; level?: string; role?: string; role_title?: string;
   years?: string; stack?: string; improve?: string[]; improve_note?: string;
   interview_date?: string; hours_per_week?: number; interview_lang?: string;
-  new_stack?: string; self?: Record<string, number>; diagnostic?: Record<string, number>; onboarded?: boolean;
+  new_stack?: string; target_level?: string; self?: Record<string, number>; diagnostic?: Record<string, number>; onboarded?: boolean;
 }
 export interface Plan {
   id: string; user_id: string; track: "main" | "ai"; role_key: string | null; title: string;
   data: { summary?: string; market_notes?: string[]; sources?: { title: string; url: string }[];
     map_refreshed_at?: string; trends?: { title: string; what_changed: string; why_it_matters: string }[];
-    interview_format_notes?: string[] };
+    interview_format_notes?: string[]; excellence?: { title: string; why: string }[] };
   active: boolean; created_at: string;
 }
 export interface Topic {

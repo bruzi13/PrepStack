@@ -66,6 +66,7 @@ function plan(input: In) {
     sources: [{ title: "מקור לדוגמה", url: "https://example.com" }],
     trends: [{ title: "ראיונות עם AI", what_changed: "סבב קוד שבו מותר להשתמש בעוזר AI", why_it_matters: "נבחנים על שיקול דעת ואימות, לא רק על הקלדה" }],
     interview_format_notes: ["סינון טלפוני, שני סבבי קוד, System Design, התנהגותי."],
+    excellence: [{ title: "שיקול דעת בפרודקשן", why: "יודעים מה יכול להישבר ומתכננים לזה מראש." }],
   };
 }
 
@@ -142,6 +143,7 @@ export function mockJob(kind: string, input: In): unknown {
       moments: [{ quote: "אני חושב שזה יעבוד", feedback: "המראיין רצה לראות בדיקה, לא תחושה.", better: "להריץ דוגמה ביד ולהראות שהפלט נכון." }],
       drills: [{ title: "ניתוח סיבוכיות", description: "לנתח זמן ומקום של פתרון", kind: "concept" }],
     };
+    case "custom": return { note: "נוספו נושאים לדוגמה (מצב הדגמה).", module: "נושאים שהוספתי", topics: [{ title: String(input.request).slice(0, 40), description: "נושא לדוגמה מהבקשה שלך.", kind: "concept", priority: 2, est_minutes: 30 }] };
     case "jd": return {
       role_title: "Senior Backend Engineer", company_type: "Scale-up", fit_summary: "התאמה טובה ביסודות, פער בניסיון עם streaming (ניתוח לדוגמה).", match_percent: 72,
       must_have: ["Node.js או Go", "PostgreSQL", "מערכות מבוזרות"], nice_to_have: ["Kafka", "Kubernetes"],

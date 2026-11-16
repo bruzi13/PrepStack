@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { KIND_LABEL, TEST_FOR_KIND, TEST_LABEL } from "@shared/catalog";
 import { useMe } from "@/app/AppContext";
-import { createPlan, refreshPlan } from "@/services/plans";
+import { addCustomTopics, createPlan, refreshPlan } from "@/services/plans";
 import { isDue, levelOf, localDate } from "@/learning/srs";
 import { db } from "@/services/store";
 import type { Plan, Topic } from "@/types";
@@ -17,6 +17,8 @@ export default function PlanPage({ track }: { track: "main" | "ai" }) {
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [note, setNote] = useState("");
+  const [wish, setWish] = useState("");
+  const [wishNote, setWishNote] = useState("");
 
   const load = useCallback(async () => {
     const [p] = await db.list<Plan>("prep_plans", { eq: { user_id: user.id, track, active: true } });
@@ -34,6 +36,14 @@ export default function PlanPage({ track }: { track: "main" | "ai" }) {
     if (!plan) return;
     setBusy("refresh"); setErr(""); setNote("");
     try { const n = await refreshPlan(user, profile, plan, topics); await load(); setNote(n ? `נוספו ${n} נושאים חדשים לתוכנית.` : "התוכנית שלכם מעודכנת. לא נמצאו נושאים חדשים שחסרים בה."); }
+    catch (e) { setErr((e as Error).message); }
+    setBusy("");
+  }
+
+  async function addWish() {
+    if (!plan || !wish.trim()) return;
+    setBusy("wish"); setErr(""); setWishNote("");
+    try { const r = await addCustomTopics(user, profile, plan, topics, wish.trim()); await load(); setWish(""); setWishNote(r.note || (r.added ? "הנושאים נוספו לסוף התוכנית." : "לא נוספו נושאים חדשים.")); }
     catch (e) { setErr((e as Error).message); }
     setBusy("");
   }
@@ -74,6 +84,7 @@ export default function PlanPage({ track }: { track: "main" | "ai" }) {
         <p>{plan.data.summary}</p>
         {!!plan.data.market_notes?.length && <><h4>מה השוק מצפה עכשיו</h4><ul>{plan.data.market_notes.map((n, i) => <li key={i}>{n}</li>)}</ul></>}
         {!!plan.data.trends?.length && <details><summary>מה השתנה לאחרונה בתחום</summary>{plan.data.trends.map((t, i) => <p key={i}><b>{t.title}:</b> {t.what_changed} <span className="muted">{t.why_it_matters}</span></p>)}</details>}
+        {!!plan.data.excellence?.length && <details><summary>מה מבדיל את הטובים ביותר בתפקיד</summary><ul>{plan.data.excellence.map((x, i) => <li key={i}><b>{x.title}:</b> {x.why}</li>)}</ul></details>}
         {!!plan.data.interview_format_notes?.length && <details><summary>איך נראים ראיונות לתפקיד היום</summary><ul>{plan.data.interview_format_notes.map((n, i) => <li key={i}>{n}</li>)}</ul></details>}
         {!!plan.data.sources?.length && <details><summary>מקורות שהתוכנית מבוססת עליהם ({plan.data.sources.length})</summary><ul className="ltr sources">{plan.data.sources.map((s) => <li key={s.url}><a href={s.url} target="_blank" rel="noreferrer noopener">{s.title || s.url}</a></li>)}</ul></details>}
       </section>
@@ -93,6 +104,14 @@ export default function PlanPage({ track }: { track: "main" | "ai" }) {
           ); })}</div>
         </section>
       ))}
+
+      <section className="card wish">
+        <h3>מה עוד בא לך ללמוד?</h3>
+        <p className="muted">טכנולוגיה, נושא או כיוון שחסר בתוכנית. נהפוך את זה לשיעורים ונוסיף אותם בסוף התוכנית.</p>
+        <textarea dir="auto" rows={3} value={wish} maxLength={2000} onChange={(e) => setWish(e.target.value)} placeholder="למשל: Kafka לעומק, איך לכתוב design doc טוב, Rust בשביל backend, observability עם OpenTelemetry" />
+        {busy === "wish" ? <Busy label="מתאימים נושאים לבקשה שלך" /> : <button className="btn primary" disabled={!wish.trim() || !!busy} onClick={addWish}>הוסיפו לתוכנית</button>}
+        {wishNote && <div className="notice">{wishNote}</div>}
+      </section>
     </div>
   );
 }

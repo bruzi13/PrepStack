@@ -12,7 +12,7 @@ export default function Interviews() {
   const a = profile.answers;
   const [past, setPast] = useState<Interview[]>([]);
   const [pick, setPick] = useState<InterviewType | null>(null);
-  const [cfg, setCfg] = useState({ level: a.level === "student" ? "junior" : a.level ?? "mid", lang: a.interview_lang === "en" ? "en" : "he", company: "scaleup", short: false });
+  const [cfg, setCfg] = useState({ level: a.target_level ?? (a.level === "student" ? "junior" : a.level ?? "mid"), lang: a.interview_lang === "en" ? "en" : "he", company: "scaleup", short: false });
   const [err, setErr] = useState("");
 
   useEffect(() => { db.list<Interview>("prep_interviews", { eq: { user_id: user.id }, order: "created_at", asc: false, limit: 20 }).then(setPast).catch((e) => setErr(e.message)); }, [user.id]);

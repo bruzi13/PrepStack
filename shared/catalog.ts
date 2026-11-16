@@ -66,6 +66,9 @@ export const LEVELS = [
   { key: "staff", title: "Staff / Principal / מנהל/ת" },
 ] as const;
 
+/** The level of the role the learner is aiming for (separate from their experience today). */
+export const TARGET_LEVELS = [["junior", "Junior"], ["mid", "Mid"], ["senior", "Senior"], ["staff", "Staff / Lead"]] as const;
+
 export const IMPROVE_GOALS = [
   { key: "dsa", title: "אלגוריתמים ושאלות קוד" },
   { key: "system_design", title: "System Design וארכיטקטורה" },

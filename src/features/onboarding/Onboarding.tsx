@@ -2,7 +2,7 @@
 // and the placement quiz at the end picks each next question by how the previous one went.
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { IMPROVE_GOALS, LEVELS, ROLES } from "@shared/catalog";
+import { IMPROVE_GOALS, LEVELS, ROLES, TARGET_LEVELS } from "@shared/catalog";
 import { useApp } from "@/app/AppContext";
 import { runJob } from "@/services/ai";
 import { createPlan } from "@/services/plans";
@@ -13,6 +13,8 @@ const OCCUPATIONS = [
   ["developer", "מפתח/ת בתעשייה"], ["student", "סטודנט/ית למדעי המחשב או הנדסה"], ["bootcamp", "בוגר/ת בוטקמפ או קורס"],
   ["adjacent", "QA / DevOps / Data / IT שרוצה להתקדם או לעבור תחום"], ["switcher", "מסב/ה מקצוע מתחום אחר"], ["manager", "מנהל/ת או ראש צוות"],
 ] as const;
+
+const TARGET_FROM: Record<string, string> = { student: "junior", junior: "junior", mid: "mid", senior: "senior", staff: "staff" };
 
 interface DQ { id: string; area: string; level: number; question: string; options: string[]; answer: number; explain: string }
 type Step = "who" | "level" | "role" | "stack" | "improve" | "newstack" | "time" | "quiz" | "build";
@@ -33,8 +35,7 @@ export default function Onboarding() {
   // The path through the questionnaire depends on the answers so far.
   const steps = useMemo<Step[]>(() => {
     const s: Step[] = ["who"];
-    if (!["student", "switcher"].includes(a.occupation ?? "")) s.push("level");
-    s.push("role");
+    s.push("level", "role");
     if (a.occupation !== "switcher") s.push("stack");
     s.push("improve");
     if (a.improve?.includes("new_stack")) s.push("newstack");
@@ -45,16 +46,17 @@ export default function Onboarding() {
 
   const canNext = step === "who" ? !!a.occupation && !!name.trim()
     : step === "level" ? !!a.level
-    : step === "role" ? !!a.role && (a.role !== "other" || !!a.role_title?.trim())
+    : step === "role" ? !!a.role && (a.role !== "other" || !!a.role_title?.trim()) && !!a.target_level
     : step === "improve" ? (a.improve?.length ?? 0) > 0 : true;
 
   function finalAnswers(): Answers {
-    const level = a.occupation === "student" ? "student" : a.occupation === "switcher" ? "junior" : a.level;
     const role_title = a.role === "other" ? a.role_title : ROLES.find((r) => r.key === a.role)?.title;
-    return { ...a, level, role_title };
+    return { ...a, level: a.level ?? "junior", role_title };
   }
 
   async function next() {
+    // Suggest the level of role that matches their experience; they can change it.
+    if (step === "level" && !a.target_level) set({ target_level: TARGET_FROM[a.level ?? "junior"] ?? "mid" });
     if (i < steps.length - 1) { setI(i + 1); return; }
     setPhase("loading-quiz"); setErr("");
     try {
@@ -127,7 +129,7 @@ export default function Onboarding() {
       </>}
       {step === "level" && <>
         <h2>כמה ניסיון יש לכם?</h2>
-        <div className="options">{LEVELS.filter((l) => l.key !== "student").map((l) => <button key={l.key} className={`option ${a.level === l.key ? "on" : ""}`} onClick={() => set({ level: l.key })}>{l.title}</button>)}</div>
+        <div className="options">{LEVELS.map((l) => <button key={l.key} className={`option ${a.level === l.key ? "on" : ""}`} onClick={() => set({ level: l.key })}>{l.title}</button>)}</div>
       </>}
       {step === "role" && <>
         <h2>לאיזה תפקיד אתם מכוונים?</h2>
@@ -136,6 +138,9 @@ export default function Onboarding() {
           <button className={`option ${a.role === "other" ? "on" : ""}`} onClick={() => set({ role: "other" })}><b>תפקיד אחר</b><small>כתבו בעצמכם</small></button>
         </div>
         {a.role === "other" && <label>שם התפקיד<input dir="auto" value={a.role_title ?? ""} onChange={(e) => set({ role_title: e.target.value })} placeholder="למשל: Embedded Engineer, Solutions Architect" /></label>}
+        <p className="q-label">באיזו רמה התפקיד שאתם מחפשים?</p>
+        <div className="seg">{TARGET_LEVELS.map(([k, t]) => <button key={k} className={a.target_level === k ? "on" : ""} onClick={() => set({ target_level: k })}>{t}</button>)}</div>
+        <small className="muted">התוכנית, השיעורים והראיונות יכוונו לרמה הזו.</small>
       </>}
       {step === "stack" && <>
         <h2>עם מה אתם עובדים היום?</h2>
