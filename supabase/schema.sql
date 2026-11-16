@@ -1,5 +1,4 @@
--- PrepStack: tables for the interview-prep site. Lives in the same Supabase project as Amirnet;
--- every table is prefixed prep_ so nothing of Amirnet's is touched.
+-- PrepStack: tables for the interview-prep site (its own Supabase project).
 -- Run once: Supabase -> SQL Editor -> New query -> paste -> Run. Safe to run again.
 
 create table if not exists public.prep_profiles (

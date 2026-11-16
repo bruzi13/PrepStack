@@ -1,4 +1,4 @@
-// Data access. Real mode talks to Supabase (same project as Amirnet, tables prefixed prep_).
+// Data access. Real mode talks to Supabase (PrepStack project, tables prefixed prep_).
 // Demo mode (npm run demo) keeps everything in this browser so the site can be tried without a backend.
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@shared/config";
