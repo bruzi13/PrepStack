@@ -5,3 +5,5 @@ dist/
 .claude/
 .taste-skill/
 shots/
+.agents/
+skills-lock.json
