@@ -3,6 +3,7 @@ import { askJson, research, S } from "./claude";
 import { AI_TRACK_SPINE, formatById, interviewById, TEST_FOR_KIND, type TopicKind } from "../../../shared/catalog";
 
 type In = Record<string, any>;
+type Json = Record<string, unknown>;
 
 const BASE = `You are the learning engine of PrepStack, an interview-prep and upskilling site for people in tech in Israel.
 Write everything the learner reads in natural, direct Hebrew. Keep technical terms, code, identifiers and product names in English.
@@ -175,23 +176,48 @@ Leave quiz, open_question, open_rubric, architecture and practical empty.`,
   practical: `test.type = "practical". Fill test.practical with one hands-on task the learner answers in writing in 10-15 minutes (write the query / config / prompt / tool definition / review / STAR answer). deliverable: exactly what to hand in. rubric: 4-6 concrete criteria. Leave quiz, open_question, open_rubric, code and architecture empty.`,
 };
 
+// The lesson body and its test are written by two parallel requests: one schema with every test type in it
+// is too large for the API's structured-output grammar, and each request alone is faster.
+const BODY_SCHEMA = S.obj({
+  title: (LESSON_SCHEMA.properties as Record<string, Json>).title,
+  intro: (LESSON_SCHEMA.properties as Record<string, Json>).intro,
+  blocks: (LESSON_SCHEMA.properties as Record<string, Json>).blocks,
+  takeaways: (LESSON_SCHEMA.properties as Record<string, Json>).takeaways,
+  interview_tips: (LESSON_SCHEMA.properties as Record<string, Json>).interview_tips,
+});
+const TEST_PARTS = (((LESSON_SCHEMA.properties as Record<string, Json>).test as Json).properties) as Record<string, Json>;
+const TEST_SCHEMA: Record<string, Json> = {
+  quiz: S.obj({ quiz: TEST_PARTS.quiz, open_question: TEST_PARTS.open_question, open_rubric: TEST_PARTS.open_rubric }),
+  code: S.obj({ code: TEST_PARTS.code }),
+  architecture: S.obj({ architecture: TEST_PARTS.architecture }),
+  practical: S.obj({ practical: TEST_PARTS.practical }),
+};
+const EMPTY_TEST = {
+  quiz: [], open_question: "", open_rubric: "",
+  code: { title: "", statement: "", fn_name: "", starter_js: "", starter_py: "", reference_js: "", tests: [], hints: [] },
+  architecture: { prompt: "", requirements: [], constraints: [], rubric: [] },
+  practical: { task: "", deliverable: "", rubric: [] },
+};
+const EMPTY_BLOCK = { title: "", md: "", mermaid: "", question: "", options: [], answer: 0, explain: "", steps: [], cards: [] };
+
 async function lesson(input: In) {
   const t = input.topic ?? {};
   const kind = (KINDS as readonly string[]).includes(t.kind) ? (t.kind as TopicKind) : "concept";
   const fmt = formatById(input.format);
   const testType = TEST_FOR_KIND[kind];
-  return askJson({
-    system: BASE,
-    effort: "medium",
-    maxTokens: 48000,
-    user: `Write one lesson and its end-of-lesson test.
-
-Topic: ${t.title}
+  const about = `Topic: ${t.title}
 What the learner should be able to do: ${t.description ?? ""}
 Module: ${t.module ?? ""} · Kind: ${kind}
 Learner: ${profileText(input.profile)}
 Current mastery of this topic: ${Math.round(input.mastery ?? 0)}/100.${input.review ? " This is a REVIEW session: a compact refresher (about half the usual length) that attacks the weak points, and a NEW test different from before." : ""}
-${input.weak_points?.length ? `Weak points seen in their previous attempt: ${JSON.stringify(input.weak_points)}` : ""}
+${input.weak_points?.length ? `Weak points seen in their previous attempt: ${JSON.stringify(input.weak_points)}` : ""}`;
+
+  const [body, test] = await Promise.all([
+    askJson({
+      system: BASE, effort: "medium", maxTokens: 40000, schema: BODY_SCHEMA,
+      user: `Write one lesson. (Its end-of-lesson test is written separately; do not include one.)
+
+${about}
 
 Teaching format: "${fmt.id}". ${fmt.guide}
 This format was chosen for this learner because it is what has worked for them, so follow it faithfully; do not blend in the other styles.
@@ -200,11 +226,19 @@ Lesson rules:
 - Aim for 15-25 minutes of real learning, pitched at the learner's level and their stack. Go to the depth an interviewer for their target role would probe.
 - Block types: "text" (Markdown explanation), "example" (Markdown worked example, code in fenced blocks with a language tag), "diagram" (Mermaid source in "mermaid": use only simple flowchart or sequenceDiagram syntax, quote every label that has spaces or punctuation with double quotes, English labels), "check" (one multiple-choice question in the middle of the lesson), "scenario" (branching simulation), "flashcards".
 - Fill only the fields the block type uses; set the others to empty strings / empty arrays / 0.
-- Code and commands must be correct and runnable. Left-to-right content (code, diagrams) stays in English.
+- Code and commands must be correct and runnable. Left-to-right content (code, diagrams) stays in English.`,
+    }),
+    askJson({
+      system: BASE, effort: "medium", maxTokens: 20000, schema: TEST_SCHEMA[testType],
+      user: `Write the end-of-lesson test for a lesson on this topic. It checks whether the learner can USE the topic, at the level of a real interview for their target role.
 
-Test rules: the test checks whether they can USE what was taught, at the level of a real interview. ${TEST_GUIDE[testType]}`,
-    schema: LESSON_SCHEMA,
-  });
+${about}
+
+${TEST_GUIDE[testType].replace(/test\.type = "[a-z]+"\. /, "").replace(/\s*Leave [^.]*empty[^.]*\.\s*$/, "").replace(/test\./g, "")}`,
+    }),
+  ]);
+  const blocks = (Array.isArray(body.blocks) ? body.blocks : []).map((b: In) => ({ ...EMPTY_BLOCK, ...b }));
+  return { ...body, blocks, takeaways: body.takeaways ?? [], interview_tips: body.interview_tips ?? [], test: { ...EMPTY_TEST, ...test, type: testType } };
 }
 
 /* ---------------- grading ---------------- */

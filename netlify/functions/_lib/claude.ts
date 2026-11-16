@@ -39,15 +39,23 @@ function parseJson(text: string): Json {
 
 /** One request that must come back as JSON matching `schema`. Streams so long outputs don't hit HTTP timeouts. */
 export async function askJson(opts: { system: string; user: string; schema: Json; effort?: Effort; maxTokens?: number }): Promise<Json> {
-  const stream = client().beta.messages.stream({
+  const run = (strict: boolean) => client().beta.messages.stream({
     model: MODEL,
     max_tokens: opts.maxTokens ?? 32000,
-    system: opts.system,
+    // Without enforced structured output, the schema goes into the prompt instead.
+    system: strict ? opts.system : `${opts.system}\n\nReply with only one JSON object that matches this JSON schema exactly (every field present). No prose, no code fences.\n${JSON.stringify(opts.schema)}`,
     messages: [{ role: "user", content: opts.user }],
-    output_config: { effort: opts.effort ?? "medium", format: { type: "json_schema", schema: opts.schema } },
+    output_config: strict ? { effort: opts.effort ?? "medium", format: { type: "json_schema", schema: opts.schema } } : { effort: opts.effort ?? "medium" },
     ...fallbackFor(MODEL),
-  });
-  const msg = await stream.finalMessage();
+  }).finalMessage();
+  let msg;
+  try {
+    msg = await run(true);
+  } catch (e) {
+    // The API rejects schemas whose compiled grammar is too large; ask for the same JSON without enforcement.
+    if (e instanceof Anthropic.BadRequestError && /grammar|schema/i.test(e.message)) msg = await run(false);
+    else throw e;
+  }
   if (msg.stop_reason === "refusal") throw new Error("המודל סירב לבקשה הזו. נסו לנסח אחרת.");
   if (msg.stop_reason === "max_tokens") throw new Error("התשובה נקטעה כי הייתה ארוכה מדי. נסו שוב.");
   return parseJson(textOf(msg.content as Array<{ type: string; text?: string }>));
