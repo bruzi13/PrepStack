@@ -15,7 +15,6 @@ import { ChatBox } from "@/components/ChatBox";
 import { CodeLab, type CodeSubmission } from "@/components/CodeLab";
 import { Busy, Diagram, ErrorBox, Md, ReviewView } from "@/components/ui";
 
-const GEN_STEPS = ["בוחרים את דרך ההוראה שמתאימה לכם…", "כותבים את השיעור לרמה ולסטאק שלכם…", "מכינים דוגמאות ותרגילים…", "בונים את המבחן המסכם… (בערך דקה)"];
 const WANTED = ["יותר דוגמאות", "יותר תרשימים", "יותר תרגול", "יותר עומק", "קצר יותר", "קצב איטי יותר"];
 
 export default function LessonPage() {
@@ -104,42 +103,41 @@ export default function LessonPage() {
 
   if (err && stage !== "test") return <div className="page"><ErrorBox msg={err} retry={topic ? () => generate(topic) : undefined} /><Link to="/plan" className="link">חזרה לתוכנית</Link></div>;
   if (stage === "loading" || !topic) return <Busy label="טוען…" />;
-  if (stage === "generating" || !lesson) return <Busy label={`מכינים את השיעור: ${topic.title}`} steps={GEN_STEPS} />;
+  if (stage === "generating" || !lesson) return <Busy label="מכין שיעור…" />;
 
   const c = lesson.content, fmt = formatById(lesson.format), test = c.test;
-  const reason = choice?.reason ?? (lesson.choice as { reason?: string } | null)?.reason;
 
   return (
     <div className="page lesson">
-      <Link to={topic.track === "ai" ? "/ai" : "/plan"} className="link">→ חזרה לתוכנית</Link>
+      <Link to={topic.track === "ai" ? "/ai" : "/plan"} className="link">→ לתוכנית</Link>
       <div className="page-head">
         <h1>{c.title || topic.title}</h1>
         <p className="muted">{topic.module} · {KIND_LABEL[topic.kind]}{isReview ? " · שיעור חזרה" : ""}</p>
       </div>
 
       {stage === "learn" && <>
-        <div className="card format-card">
-          <div><b>{fmt.icon} פורמט השיעור: {fmt.name}</b><div className="muted">{reason ?? fmt.blurb}</div></div>
-          <details className="switch"><summary>פורמט אחר</summary>
+        <div className="format-bar">
+          <span className="muted">{fmt.name}</span>
+          <details className="switch"><summary>החלפת פורמט</summary>
             <div className="chips">
-              <button className="chip" onClick={() => switchFormat()}>🎲 תבחרו לי אחר</button>
-              {FORMATS.filter((f) => f.id !== lesson.format).map((f) => <button key={f.id} className="chip" title={f.blurb} onClick={() => switchFormat(f.id)}>{f.icon} {f.name}</button>)}
+              <button className="chip" onClick={() => switchFormat()}>אקראי</button>
+              {FORMATS.filter((f) => f.id !== lesson.format).map((f) => <button key={f.id} className="chip" title={f.blurb} onClick={() => switchFormat(f.id)}>{f.name}</button>)}
             </div>
           </details>
         </div>
         <p className="intro">{c.intro}</p>
         {c.blocks.map((b, i) => <BlockView key={i} b={b} />)}
-        {c.takeaways.length > 0 && <div className="card takeaways"><h3>מה לקחת מהשיעור</h3><ul>{c.takeaways.map((t, i) => <li key={i}>{t}</li>)}</ul>
-          {c.interview_tips?.length > 0 && <><h4>איך זה עולה בראיון</h4><ul>{c.interview_tips.map((t, i) => <li key={i}>{t}</li>)}</ul></>}</div>}
+        {c.takeaways.length > 0 && <div className="card takeaways"><h3>סיכום</h3><ul>{c.takeaways.map((t, i) => <li key={i}>{t}</li>)}</ul>
+          {c.interview_tips?.length > 0 && <><h4>בראיון</h4><ul>{c.interview_tips.map((t, i) => <li key={i}>{t}</li>)}</ul></>}</div>}
         <Tutor topic={topic.title} />
-        <div className="card cta"><div><b>מוכנים? {TEST_LABEL[test.type]}</b><div className="muted">המבחן קובע את רמת השליטה שלכם בנושא ומתי תחזרו אליו.</div></div><button className="btn primary big" onClick={() => { setStage("test"); window.scrollTo(0, 0); }}>למבחן</button></div>
+        <div className="card cta"><b>{TEST_LABEL[test.type]}</b><button className="btn primary big" onClick={() => { setStage("test"); window.scrollTo(0, 0); }}>התחלה</button></div>
       </>}
 
       {(stage === "test" || stage === "grading") && <>
         <ErrorBox msg={err} />
-        {stage === "grading" && <Busy label="בודקים את התשובה שלכם" steps={["קוראים את ההגשה…", "משווים לרובריקה של מראיין…", "כותבים ביקורת מפורטת…"]} />}
+        {stage === "grading" && <Busy label="בודק…" />}
         <div style={{ display: stage === "grading" ? "none" : undefined }}>
-          <button className="link" onClick={() => setStage("learn")}>→ חזרה לשיעור</button>
+          <button className="link" onClick={() => setStage("learn")}>→ לשיעור</button>
           {test.type === "quiz" && <QuizTest test={test} onDone={(answers, open, mcq) => {
             const sub = { answers, open, mcq_percent: mcq };
             if (test.open_question && open.trim()) grade("quiz", sub, (r) => ({ score: 0.7 * mcq + 0.3 * r.score, extra: `שאלות אמריקאיות: ${Math.round(mcq)} · שאלה פתוחה: ${r.score}` }));
@@ -153,7 +151,7 @@ export default function LessonPage() {
 
       {stage === "result" && result && <>
         <div className="card"><ReviewView review={result.review} score={result.score} extra={result.extra && <small className="muted">{result.extra}</small>} />
-          <p className="muted">רמת השליטה בנושא עכשיו: {Math.round(topic.mastery)}. {topic.next_review && `נחזור אליו לתרגול קצר ב-${topic.next_review}.`}</p></div>
+          <p className="muted">שליטה: {Math.round(topic.mastery)}{topic.next_review ? ` · חזרה הבאה ${topic.next_review}` : ""}</p></div>
         <FeedbackForm lesson={lesson} />
         <div className="row">
           {nextTopic && <Link className="btn primary" to={`/lesson/${nextTopic.id}`}>לשיעור הבא: {nextTopic.title}</Link>}
@@ -178,7 +176,7 @@ function BlockView({ b }: { b: Block }) {
   if (b.type === "flashcards") return <div className="card"><h3>{b.title || "כרטיסיות"}</h3><div className="cards">{b.cards.map((c, i) => <Flash key={i} q={c.q} a={c.a} />)}</div></div>;
   return (
     <div className={`card block ${b.type}`}>
-      {b.title && <h3>{b.type === "example" ? "🧩 " : ""}{b.title}</h3>}
+      {b.title && <h3>{b.title}</h3>}
       {b.type === "diagram" && b.mermaid && <Diagram code={b.mermaid} />}
       <Md>{b.md}</Md>
     </div>
@@ -205,7 +203,7 @@ function Scenario({ b }: { b: Block }) {
   const chosen = pick != null ? s.choices[pick] : null;
   return (
     <div className="card scenario">
-      <h3>🎮 {b.title || "סימולציה"} <small className="muted">שלב {step + 1}/{b.steps.length}</small></h3>
+      <h3>{b.title || "תרחיש"} <small className="muted">שלב {step + 1}/{b.steps.length}</small></h3>
       <p>{s.situation}</p>
       <div className="options">{s.choices.map((c, i) => <button key={i} disabled={pick != null} className={`option ${pick === i ? (c.good ? "right" : "wrong") : ""}`} onClick={() => setPick(i)}>{c.label}</button>)}</div>
       {chosen && <div className={`explain ${chosen.good ? "good" : "bad"}`}>{chosen.outcome}
@@ -217,7 +215,7 @@ function Scenario({ b }: { b: Block }) {
 
 function Flash({ q, a }: { q: string; a: string }) {
   const [open, setOpen] = useState(false);
-  return <button className={`flash ${open ? "open" : ""}`} onClick={() => setOpen(!open)}><b>{q}</b>{open ? <span>{a}</span> : <small className="muted">לחצו לתשובה</small>}</button>;
+  return <button className={`flash ${open ? "open" : ""}`} onClick={() => setOpen(!open)}><b>{q}</b>{open ? <span>{a}</span> : <small className="muted">הצגת תשובה</small>}</button>;
 }
 
 function Tutor({ topic }: { topic: string }) {
@@ -231,7 +229,7 @@ function Tutor({ topic }: { topic: string }) {
     catch (e) { setMsgs([...next, { role: "assistant", content: (e as Error).message }]); }
     setStreaming(""); setBusy(false);
   }
-  return <details className="card tutor"><summary>💬 משהו לא ברור? שאלו את המורה</summary><ChatBox messages={msgs} streaming={streaming} busy={busy} onSend={send} other="המורה" placeholder="שאלו כל דבר על השיעור…" /></details>;
+  return <details className="card tutor"><summary>שאלה על השיעור</summary><ChatBox messages={msgs} streaming={streaming} busy={busy} onSend={send} other="המורה" placeholder="השאלה שלך…" /></details>;
 }
 
 function QuizTest({ test, onDone }: { test: LessonContent["test"]; onDone: (answers: number[], open: string, mcqPercent: number) => void }) {
@@ -245,7 +243,7 @@ function QuizTest({ test, onDone }: { test: LessonContent["test"]; onDone: (answ
           <div className="options">{q.options.map((o, j) => <button key={j} className={`option ${answers[i] === j ? "on" : ""}`} onClick={() => setAnswers(answers.map((a, k) => (k === i ? j : a)))}>{o}</button>)}</div></div>
       ))}
       {test.open_question && <div className="card"><p className="q-title">שאלה פתוחה: {test.open_question}</p>
-        <textarea dir="auto" rows={6} value={open} onChange={(e) => setOpen(e.target.value)} placeholder="ענו כמו שהייתם עונים למראיין…" /></div>}
+        <textarea dir="auto" rows={6} value={open} onChange={(e) => setOpen(e.target.value)} placeholder="התשובה שלך…" /></div>}
       <button className="btn primary big" disabled={!all} onClick={() => onDone(answers, open, (answers.filter((a, i) => a === test.quiz[i].answer).length / Math.max(1, test.quiz.length)) * 100)}>הגשה</button>
     </div>
   );
@@ -259,7 +257,7 @@ function ArchTest({ test, onSubmit }: { test: LessonContent["test"]["architectur
       <div className="card"><h3>{test.prompt}</h3>
         <div className="grid2"><div><h4>דרישות</h4><ul>{test.requirements.map((r, i) => <li key={i}>{r}</li>)}</ul></div>
           {test.constraints.length > 0 && <div><h4>אילוצים</h4><ul>{test.constraints.map((r, i) => <li key={i}>{r}</li>)}</ul></div>}</div>
-        <small className="muted">תכננו על הלוח והסבירו את ההחלטות בתיבת ההערות. תקבלו ציון וביקורת לפי: {test.rubric.map((r) => r.dimension).join(" · ")}</small></div>
+        <small className="muted">קריטריונים: {test.rubric.map((r) => r.dimension).join(" · ")}</small></div>
       <div className="card"><ArchCanvas value={canvas.current} onChange={(c) => { canvas.current = c; setCount(c.nodes.length); }} /></div>
       <button className="btn primary big" disabled={count < 2} onClick={() => onSubmit(canvas.current)}>הגשת התכנון לביקורת</button>
     </div>
@@ -270,8 +268,8 @@ function PracticalTest({ test, onSubmit }: { test: LessonContent["test"]["practi
   const [answer, setAnswer] = useState("");
   return (
     <div>
-      <div className="card"><Md>{test.task}</Md><p><b>מה להגיש:</b> {test.deliverable}</p><small className="muted">נבדק לפי: {test.rubric.join(" · ")}</small></div>
-      <div className="card"><textarea dir="auto" className="mono" rows={14} value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="כתבו כאן את התשובה…" /></div>
+      <div className="card"><Md>{test.task}</Md><p><b>מה להגיש:</b> {test.deliverable}</p><small className="muted">קריטריונים: {test.rubric.join(" · ")}</small></div>
+      <div className="card"><textarea dir="auto" className="mono" rows={14} value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="התשובה שלך…" /></div>
       <button className="btn primary big" disabled={answer.trim().length < 20} onClick={() => onSubmit(answer)}>הגשה לביקורת</button>
     </div>
   );
@@ -282,20 +280,20 @@ function FeedbackForm({ lesson }: { lesson: Lesson }) {
   const { user } = useMe();
   const [f, setF] = useState({ rating: 0, difficulty: 0, wanted: [] as string[], comment: "" });
   const [sent, setSent] = useState(false);
-  if (sent) return <div className="notice">תודה. המשוב נשמר וישפיע על השיעורים הבאים שלכם.</div>;
+  if (sent) return <div className="notice">המשוב נשמר.</div>;
   return (
     <div className="card feedback">
-      <h3>איך היה השיעור?</h3>
+      <h3>דירוג השיעור</h3>
       <div className="stars" role="radiogroup" aria-label="דירוג">{[1, 2, 3, 4, 5].map((n) => <button key={n} className={n <= f.rating ? "on" : ""} aria-label={`${n} כוכבים`} onClick={() => setF({ ...f, rating: n })}>★</button>)}</div>
       <p className="q-label">רמת הקושי</p>
       <div className="seg">{[[1, "קל מדי"], [3, "בדיוק"], [5, "קשה מדי"]].map(([v, t]) => <button key={v} className={f.difficulty === v ? "on" : ""} onClick={() => setF({ ...f, difficulty: v as number })}>{t}</button>)}</div>
-      <p className="q-label">מה הייתם רוצים בשיעור הבא?</p>
+      <p className="q-label">בפעם הבאה</p>
       <div className="chips">{WANTED.map((w) => <button key={w} className={`chip ${f.wanted.includes(w) ? "on" : ""}`} onClick={() => setF({ ...f, wanted: f.wanted.includes(w) ? f.wanted.filter((x) => x !== w) : [...f.wanted, w] })}>{w}</button>)}</div>
-      <textarea dir="auto" rows={2} maxLength={2000} value={f.comment} onChange={(e) => setF({ ...f, comment: e.target.value })} placeholder="הערה חופשית (לא חובה)" />
+      <textarea dir="auto" rows={2} maxLength={2000} value={f.comment} onChange={(e) => setF({ ...f, comment: e.target.value })} placeholder="הערה (לא חובה)" />
       <button className="btn primary" disabled={!f.rating} onClick={async () => {
         await db.insert("prep_feedback", { user_id: user.id, lesson_id: lesson.id, topic_kind: lesson.topic_kind, format: lesson.format, rating: f.rating, difficulty: f.difficulty || null, wanted: f.wanted.join(", "), comment: f.comment });
         setSent(true);
-      }}>שליחת משוב</button>
+      }}>שליחה</button>
     </div>
   );
 }

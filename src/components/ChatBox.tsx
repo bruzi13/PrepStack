@@ -38,7 +38,7 @@ export function ChatBox({ messages, streaming, busy, onSend, lang = "he", placeh
         <div ref={end} />
       </div>
       <div className="composer">
-        <textarea rows={3} value={text} placeholder={placeholder ?? "כתבו את התשובה שלכם…  (Ctrl+Enter לשליחה)"} onChange={(e) => setText(e.target.value)}
+        <textarea rows={3} value={text} placeholder={placeholder ?? "התשובה שלך…"} onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) send(); }} />
         <div className="row between">
           <div className="row">{SR && <button className={`btn small ${listening ? "rec" : ""}`} onClick={dictate} title="הכתבה בקול">{listening ? "⏹ עצירה" : "🎤 דברו"}</button>}{footer}</div>

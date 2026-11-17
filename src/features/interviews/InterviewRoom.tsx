@@ -104,7 +104,7 @@ export default function InterviewRoom() {
   }
 
   if (!iv || !type) return err ? <ErrorBox msg={err} /> : <Busy label="טוען את הראיון…" />;
-  if (debriefing) return <Busy label="ועדת הגיוס כותבת את המשוב" steps={["קוראים את כל הראיון…", "מדרגים כל מימד ברובריקה…", "מאתרים את הרגעים המכריעים…"]} />;
+  if (debriefing) return <Busy label="מכין משוב…" />;
 
   if (iv.status === "done" && iv.scorecard) return <ScorecardView iv={iv} msgs={msgs} />;
 
@@ -114,9 +114,9 @@ export default function InterviewRoom() {
   return (
     <div className="page room">
       <div className="row between page-head">
-        <div><h1>{type.icon} {type.title}</h1><p className="muted">{iv.config.level} · {iv.config.lang === "en" ? "English" : "עברית"}</p></div>
+        <div><h1>{type.title}</h1><p className="muted">{iv.config.level} · {iv.config.lang === "en" ? "English" : "עברית"}</p></div>
         <div className="row"><span className={`clock ${left != null && left < 120 ? "low" : ""}`}>{left === 0 ? "הזמן נגמר" : mm}</span>
-          <button className="btn primary" disabled={busy || answered === 0} onClick={() => { if (window.confirm("לסיים את הראיון ולקבל משוב?")) finish(); }}>סיום וקבלת משוב</button></div>
+          <button className="btn primary" disabled={busy || answered === 0} onClick={() => { if (window.confirm("לסיים את הראיון ולקבל משוב?")) finish(); }}>סיום</button></div>
       </div>
       <ErrorBox msg={err} />
       <div className={`room-grid ${type.workspace === "none" ? "solo" : ""}`}>
@@ -124,14 +124,12 @@ export default function InterviewRoom() {
         {type.workspace === "code" && <div className="card ws">
           <div className="row between"><b>עורך משותף</b><div className="seg"><button className={lang === "js" ? "on" : ""} onClick={() => setLang("js")}>JavaScript</button><button className={lang === "py" ? "on" : ""} onClick={() => setLang("py")}>Python</button></div></div>
           <CodeEditor value={code} onChange={setCode} lang={lang} height="420px" />
-          <small className="muted">המראיין רואה את הקוד בכל פעם שאתם שולחים הודעה.</small>
           {type.id === "ai_assisted" && <div className="ai-tool">
-            <b>🤖 עוזר AI</b><small className="muted"> מותר להשתמש. המראיין רואה מה ביקשתם ומה קיבלתם.</small>
+            <b>עוזר AI</b>
             <div className="row"><input dir="auto" value={aiAsk} onChange={(e) => setAiAsk(e.target.value)} onKeyDown={(e) => e.key === "Enter" && askAi()} placeholder="בקשו מהעוזר לכתוב, להסביר או לבדוק קוד…" /><button className="btn" disabled={busy || !aiAsk.trim()} onClick={askAi}>שאלו</button></div>
           </div>}
         </div>}
-        {type.workspace === "canvas" && <div className="card ws"><b>לוח ארכיטקטורה משותף</b><ArchCanvas value={canvas.current} onChange={(c) => { canvas.current = c; }} height={400} />
-          <small className="muted">המראיין רואה את הלוח בכל פעם שאתם שולחים הודעה.</small></div>}
+        {type.workspace === "canvas" && <div className="card ws"><b>לוח ארכיטקטורה משותף</b><ArchCanvas value={canvas.current} onChange={(c) => { canvas.current = c; }} height={400} /></div>}
       </div>
     </div>
   );
@@ -150,16 +148,16 @@ function ScorecardView({ iv, msgs }: { iv: Interview; msgs: ChatMsg[] }) {
   }
   return (
     <div className="page">
-      <Link to="/interviews" className="link">→ לכל הסימולציות</Link>
+      <Link to="/interviews" className="link">→ לראיונות</Link>
       <div className="card"><div className="review-head"><ScoreRing score={s.score} label="ציון" /><div><h2>{iv.config.title}</h2><span className={`pill ${s.score >= 70 ? "good" : s.score >= 50 ? "warn" : "bad"}`}>{SIGNAL[s.hire_signal] ?? s.hire_signal}</span><p>{s.summary}</p></div></div>
         <div className="dims">{s.dimensions.map((d) => <div key={d.name} className="dim"><div className="dim-top"><span>{d.name}</span><b>{d.score}</b></div><Bar value={d.score} /><small className="muted">{d.comment}</small></div>)}</div></div>
       <div className="grid2">
         <div className="card"><h3>מה עבד</h3><ul className="plus">{s.strengths.map((x, i) => <li key={i}>{x}</li>)}</ul></div>
         <div className="card"><h3>מה לשפר</h3><ul>{s.improvements.map((x, i) => <li key={i}>{x}</li>)}</ul></div>
       </div>
-      {s.moments.length > 0 && <div className="card"><h3>רגעים מכריעים</h3>{s.moments.map((m, i) => <div key={i} className="moment"><blockquote>"{m.quote}"</blockquote><p><b>מה המראיין חשב:</b> {m.feedback}</p><p><b>תשובה חזקה יותר:</b> {m.better}</p></div>)}</div>}
-      {s.drills.length > 0 && <div className="card"><h3>מה ללמוד בעקבות הראיון</h3><ul className="list">{s.drills.map((d) => <li key={d.title}><div className="row between"><span><b>{d.title}</b> <small className="muted">{d.description}</small></span>
-        <button className="btn small" disabled={added.includes(d.title)} onClick={() => addDrill(d)}>{added.includes(d.title) ? "נוסף לתוכנית" : "הוסיפו לתוכנית"}</button></div></li>)}</ul></div>}
+      {s.moments.length > 0 && <div className="card"><h3>רגעים מרכזיים</h3>{s.moments.map((m, i) => <div key={i} className="moment"><blockquote>"{m.quote}"</blockquote><p><b>משוב:</b> {m.feedback}</p><p><b>חלופה חזקה:</b> {m.better}</p></div>)}</div>}
+      {s.drills.length > 0 && <div className="card"><h3>להמשך</h3><ul className="list">{s.drills.map((d) => <li key={d.title}><div className="row between"><span><b>{d.title}</b> <small className="muted">{d.description}</small></span>
+        <button className="btn small" disabled={added.includes(d.title)} onClick={() => addDrill(d)}>{added.includes(d.title) ? "נוסף לתוכנית" : "הוספה לתוכנית"}</button></div></li>)}</ul></div>}
       <details className="card"><summary>תמליל הראיון</summary><ChatLog msgs={msgs} /></details>
     </div>
   );

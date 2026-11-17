@@ -95,10 +95,10 @@ export default function Onboarding() {
     } catch (e) { setErr((e as Error).message); }
   }
 
-  if (phase === "loading-quiz") return <div className="center"><Busy label="מכינים לכם מבחן מיקום קצר" steps={["בוחרים את התחומים החשובים לתפקיד…", "כותבים שאלות בשלוש רמות…"]} /></div>;
+  if (phase === "loading-quiz") return <div className="center"><Busy label="מכין מבחן מיקום…" /></div>;
   if (phase === "building") return (
     <div className="center"><div className="card narrow">
-      {err ? <ErrorBox msg={err} retry={() => build(levels)} /> : <Busy label="בונים את תוכנית הלימודים שלכם" steps={["בודקים ברשת מה נדרש היום לתפקיד…", "קוראים מפות דרכים ודרישות משרה עדכניות…", "מתאימים לרמה ולזמן שיש לכם…", "מסדרים את הנושאים לפי סדר לימוד… (זה לוקח דקה או שתיים)"]} />}
+      {err ? <ErrorBox msg={err} retry={() => build(levels)} /> : <Busy label="בונה תוכנית…" hint="זה לוקח דקה או שתיים" />}
     </div></div>
   );
 
@@ -113,7 +113,7 @@ export default function Onboarding() {
           {current.options.map((o, idx) => <button key={idx} className="option" onClick={() => answer(idx)}>{o}</button>)}
           <button className="option dim" onClick={() => answer(-1)}>לא יודע/ת</button>
         </div>
-        <button className="link" onClick={() => build({})}>דלגו על המבחן ובנו תוכנית לפי התשובות שלי</button>
+        <button className="link" onClick={() => build({})}>דילוג</button>
       </div></div>
     );
   }
@@ -140,16 +140,14 @@ export default function Onboarding() {
         {a.role === "other" && <label>שם התפקיד<input dir="auto" value={a.role_title ?? ""} onChange={(e) => set({ role_title: e.target.value })} placeholder="למשל: Embedded Engineer, Solutions Architect" /></label>}
         <p className="q-label">באיזו רמה התפקיד שאתם מחפשים?</p>
         <div className="seg">{TARGET_LEVELS.map(([k, t]) => <button key={k} className={a.target_level === k ? "on" : ""} onClick={() => set({ target_level: k })}>{t}</button>)}</div>
-        <small className="muted">התוכנית, השיעורים והראיונות יכוונו לרמה הזו.</small>
       </>}
       {step === "stack" && <>
         <h2>עם מה אתם עובדים היום?</h2>
         <label>שפות, פריימוורקים וכלים שאתם מכירים טוב<textarea dir="auto" rows={3} value={a.stack ?? ""} onChange={(e) => set({ stack: e.target.value })} placeholder="למשל: Node.js, TypeScript, PostgreSQL, AWS, קצת Kubernetes" /></label>
-        <p className="muted">השיעורים והדוגמאות יותאמו לסטאק שלכם.</p>
       </>}
       {step === "improve" && <>
         <h2>במה אתם רוצים להשתפר?</h2>
-        <p className="muted">אפשר לבחור כמה. זה קובע מה יופיע ראשון בתוכנית.</p>
+        <p className="muted">אפשר לבחור כמה.</p>
         <div className="options two">{IMPROVE_GOALS.map((g) => {
           const on = a.improve?.includes(g.key);
           return <button key={g.key} className={`option ${on ? "on" : ""}`} onClick={() => set({ improve: on ? a.improve!.filter((x) => x !== g.key) : [...(a.improve ?? []), g.key] })}>{g.title}</button>;

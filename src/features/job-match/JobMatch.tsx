@@ -42,24 +42,24 @@ export default function JobMatch() {
 
   return (
     <div className="page">
-      <div className="page-head"><h1>התאמה למשרה</h1><p className="muted">הדביקו תיאור משרה שמעניינת אתכם. תקבלו ניתוח פערים מול הפרופיל שלכם, אילו סבבי ראיון לצפות, ונושאים להוסיף לתוכנית.</p></div>
+      <div className="page-head"><h1>התאמה למשרה</h1></div>
       <div className="card">
-        <textarea dir="auto" rows={10} value={text} onChange={(e) => setText(e.target.value)} placeholder="הדביקו כאן את תיאור המשרה (בעברית או באנגלית)…" />
-        <button className="btn primary" disabled={busy || text.trim().length < 80} onClick={analyse}>ניתוח המשרה</button>
+        <textarea dir="auto" rows={10} value={text} onChange={(e) => setText(e.target.value)} placeholder="תיאור המשרה" />
+        <button className="btn primary" disabled={busy || text.trim().length < 80} onClick={analyse}>ניתוח</button>
       </div>
       <ErrorBox msg={err} />
-      {busy && <Busy label="מנתחים את המשרה" steps={["קוראים את הדרישות…", "משווים לפרופיל ולתוכנית שלכם…"]} />}
+      {busy && <Busy label="מנתח…" />}
       {r && !busy && <>
         <div className="card"><div className="review-head"><ScoreRing score={r.match_percent} label="התאמה" /><div><h2>{r.role_title}</h2><small className="muted">{r.company_type}</small><p>{r.fit_summary}</p></div></div></div>
         <div className="grid2">
           <div className="card"><h3>דרישות חובה</h3><ul>{r.must_have.map((x, i) => <li key={i}>{x}</li>)}</ul>{r.nice_to_have.length > 0 && <><h4>יתרון</h4><ul>{r.nice_to_have.map((x, i) => <li key={i}>{x}</li>)}</ul></>}</div>
-          <div className="card"><h3>הפערים שלכם</h3>{r.gaps.length === 0 ? <p className="muted">לא נמצאו פערים משמעותיים.</p> : <ul className="list">{r.gaps.map((g, i) => <li key={i}><div><b>{g.skill}</b> {g.priority === 1 && <span className="pill hot">קריטי</span>}<br /><small className="muted">{g.why}</small></div></li>)}</ul>}</div>
-          <div className="card"><h3>סבבי ראיון צפויים</h3><ol>{r.likely_rounds.map((x, i) => <li key={i}>{x}</li>)}</ol></div>
-          <div className="card"><h3>שאלות שכדאי להתכונן אליהן</h3><ul>{r.questions_to_expect.map((x, i) => <li key={i}>{x}</li>)}</ul></div>
+          <div className="card"><h3>פערים</h3>{r.gaps.length === 0 ? <p className="muted">לא נמצאו פערים משמעותיים.</p> : <ul className="list">{r.gaps.map((g, i) => <li key={i}><div><b>{g.skill}</b> {g.priority === 1 && <span className="pill hot">קריטי</span>}<br /><small className="muted">{g.why}</small></div></li>)}</ul>}</div>
+          <div className="card"><h3>סבבים צפויים</h3><ol>{r.likely_rounds.map((x, i) => <li key={i}>{x}</li>)}</ol></div>
+          <div className="card"><h3>שאלות צפויות</h3><ul>{r.questions_to_expect.map((x, i) => <li key={i}>{x}</li>)}</ul></div>
         </div>
-        {r.suggested_topics.length > 0 && <div className="card"><h3>נושאים שיסגרו את הפער</h3>
+        {r.suggested_topics.length > 0 && <div className="card"><h3>נושאים מומלצים</h3>
           <ul className="list">{r.suggested_topics.map((t) => <li key={t.title}><div><b>{t.title}</b><br /><small className="muted">{t.description}</small></div></li>)}</ul>
-          {added ? <div className="notice">הנושאים נוספו לתוכנית שלכם כ"חובה לראיון".</div> : <button className="btn primary" onClick={addAll}>הוסיפו את כולם לתוכנית</button>}</div>}
+          {added ? <div className="notice">נוסף לתוכנית.</div> : <button className="btn primary" onClick={addAll}>הוספה לתוכנית</button>}</div>}
       </>}
     </div>
   );

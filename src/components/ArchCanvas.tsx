@@ -9,12 +9,11 @@ const PALETTE = [
   ["nosql", "NoSQL DB", "📦"], ["queue", "Queue", "📬"], ["stream", "Stream", "🌊"], ["storage", "Object Storage", "🪣"],
   ["search", "Search Index", "🔎"], ["llm", "LLM", "🧠"], ["vector", "Vector DB", "🧲"], ["agent", "Agent", "🤖"], ["mcp", "MCP Server / Tool", "🔌"],
 ] as const;
-const ICON = Object.fromEntries(PALETTE.map(([k, , i]) => [k, i]));
 
 type NodeData = { kind: string; name: string; label: string };
 const mkNode = (id: string, kind: string, name: string, i: number): Node<NodeData> => ({
   id, position: { x: 60 + (i % 4) * 190, y: 40 + Math.floor(i / 4) * 110 },
-  data: { kind, name, label: `${ICON[kind] ?? "▫️"} ${name}` }, className: `arch-node k-${kind}`,
+  data: { kind, name, label: name }, className: `arch-node k-${kind}`,
 });
 const EDGE = { markerEnd: { type: MarkerType.ArrowClosed }, style: { strokeWidth: 1.6 } };
 
@@ -38,7 +37,7 @@ export function ArchCanvas({ value, onChange, height = 440 }: { value: Canvas; o
   const add = (kind: string, name: string) => setNodes((ns) => [...ns, mkNode(`n${Date.now()}`, kind, name, counter.current++)]);
   const rename = (_: unknown, n: Node<NodeData>) => {
     const name = window.prompt("שם הרכיב (למשל: Orders Service, Redis, Postgres primary)", n.data.name);
-    if (name) setNodes((ns) => ns.map((x) => (x.id === n.id ? { ...x, data: { ...x.data, name, label: `${ICON[x.data.kind] ?? "▫️"} ${name}` } } : x)));
+    if (name) setNodes((ns) => ns.map((x) => (x.id === n.id ? { ...x, data: { ...x.data, name, label: name } } : x)));
   };
   const relabel = (_: unknown, e: Edge) => {
     const label = window.prompt("מה עובר בחיבור הזה? (למשל: HTTPS, async event, read replica)", String(e.label ?? ""));
@@ -47,15 +46,15 @@ export function ArchCanvas({ value, onChange, height = 440 }: { value: Canvas; o
 
   return (
     <div className="arch">
-      <div className="palette">{PALETTE.map(([k, name, icon]) => <button key={k} className="chip" onClick={() => add(k, name)}>{icon} {name}</button>)}</div>
+      <div className="palette">{PALETTE.map(([k, name]) => <button key={k} className="chip" onClick={() => add(k, name)}>{name}</button>)}</div>
       <div className="arch-board ltr" style={{ height }}>
         <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect}
           onNodeDoubleClick={rename} onEdgeDoubleClick={relabel} fitView fitViewOptions={{ maxZoom: 1 }} deleteKeyCode={["Backspace", "Delete"]}>
           <Background /><Controls showInteractive={false} />
         </ReactFlow>
       </div>
-      <small className="muted">לחיצה על רכיב מוסיפה אותו ללוח · גוררים מנקודה לנקודה כדי לחבר · דאבל־קליק משנה שם לרכיב או לחיבור · Delete מוחק את מה שמסומן</small>
-      <textarea className="notes" rows={5} defaultValue={value.notes} placeholder="הסבירו את התכנון: הנחות, הערכות קיבולת, למה בחרתם בכל רכיב, מה קורה כשרכיב נופל, trade-offs…"
+      <small className="muted">גרירה לחיבור · דאבל־קליק לשינוי שם · Delete למחיקה</small>
+      <textarea className="notes" rows={5} defaultValue={value.notes} placeholder="הנחות, הערכות קיבולת, trade-offs, התמודדות עם כשלים"
         onChange={(e) => { notes.current = e.target.value; setNodes((ns) => [...ns]); }} />
     </div>
   );

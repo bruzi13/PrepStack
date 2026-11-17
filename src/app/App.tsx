@@ -20,7 +20,7 @@ const InterviewRoom = lazy(() => import("@/features/interviews/InterviewRoom"));
 
 const NAV: [string, string, IconName][] = [
   ["/", "לוח בקרה", "dashboard"], ["/plan", "התוכנית שלי", "map"], ["/ai", "AI ואייג'נטים", "spark"],
-  ["/interviews", "סימולציות ראיון", "mic"], ["/jd", "התאמה למשרה", "target"], ["/insights", "מה עובד לי", "flask"], ["/settings", "הגדרות", "gear"],
+  ["/interviews", "סימולציות ראיון", "mic"], ["/jd", "התאמה למשרה", "target"], ["/insights", "תובנות", "flask"], ["/settings", "הגדרות", "gear"],
 ];
 
 export default function App() {

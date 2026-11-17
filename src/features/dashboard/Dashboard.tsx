@@ -59,26 +59,25 @@ export default function Dashboard() {
       </div>
 
       <div className="stats">
-        <div className="card stat stat-lead"><ScoreRing score={readiness} size={84} /><div><span className="stat-label">מוכנות לראיון</span><small className="muted">ממוצע השליטה בנושאי התוכנית, לפי חשיבות</small></div></div>
-        <div className="card stat"><div><span className="stat-label">שיעורים השבוע</span><div className="big-num">{week.length}</div><small className="muted">{weekAvg != null ? `ציון ממוצע ${weekAvg}` : "עוד לא התחלתם השבוע"}</small></div></div>
+        <div className="card stat stat-lead"><ScoreRing score={readiness} size={84} /><div><span className="stat-label">מוכנות לראיון</span></div></div>
+        <div className="card stat"><div><span className="stat-label">שיעורים השבוע</span><div className="big-num">{week.length}</div><small className="muted">{weekAvg != null ? `ציון ממוצע ${weekAvg}` : "—"}</small></div></div>
         <div className="card stat"><div><span className="stat-label">דקות למידה השבוע</span><div className="big-num">{weekMinutes}<small> / {goalMinutes}</small></div><Bar value={(weekMinutes / goalMinutes) * 100} tone="ok" /></div></div>
-        <div className="card stat"><div><span className="stat-label">ימים ברצף</span><div className="big-num">{days}</div><small className="muted">{weekInterviews.length} סימולציות ראיון השבוע</small></div></div>
+        <div className="card stat"><div><span className="stat-label">ימים ברצף</span><div className="big-num">{days}</div><small className="muted">{weekInterviews.length} ראיונות השבוע</small></div></div>
       </div>
 
       <div className="grid2">
         <section className="card">
-          <h3>תרגולים להיום</h3>
-          {due.length === 0 ? <p className="muted">אין תרגולי חזרה שממתינים. {next ? "אפשר להתקדם לשיעור הבא." : ""}</p> : (
+          <h3>לחזרה היום</h3>
+          {due.length === 0 ? <p className="muted">אין חזרות להיום.</p> : (
             <ul className="list">{due.slice(0, 6).map((t) => { const lv = levelOf(t.mastery, t.reviews); return (
               <li key={t.id}><Link to={`/lesson/${t.id}`}><span>{t.title}</span><span className={`pill ${lv.tone}`}>{lv.label} · {Math.round(t.mastery)}</span></Link></li>
             ); })}</ul>
           )}
-          {due.length > 0 && <small className="muted">חזרה במרווחים: נושא שנלמד חוזר לתרגול קצר בדיוק כשמתחילים לשכוח אותו.</small>}
         </section>
 
         <section className="card">
-          <h3>מה למדתם השבוע</h3>
-          {weekTopics.length === 0 ? <p className="muted">השבוע עוד לא הושלם שיעור.</p> : (
+          <h3>השבוע</h3>
+          {weekTopics.length === 0 ? <p className="muted">עוד לא הושלם שיעור השבוע.</p> : (
             <ul className="list">{weekTopics.map((t, i) => { const lv = levelOf(t.mastery, t.reviews); return (
               <li key={i}><Link to={`/lesson/${t.id}`}><span>{t.title} <small className="muted">· {KIND_LABEL[t.kind]}</small></span><span className={`pill ${lv.tone}`}>{lv.label} · {Math.round(t.mastery)}</span></Link></li>
             ); })}</ul>
@@ -86,27 +85,25 @@ export default function Dashboard() {
         </section>
 
         <section className="card">
-          <h3>רמה לפי תחום</h3>
+          <h3>לפי תחום</h3>
           {modules.length === 0 ? <p className="muted">אין עדיין תוכנית.</p> : modules.map((m) => (
-            <div key={m.track + m.name} className="mod-row"><div className="row between"><span>{m.name}{m.track === "ai" && <span className="pill hot">AI</span>}</span><small className="muted">{m.done}/{m.total} נלמדו · שליטה {m.mastery}</small></div><Bar value={m.mastery} /></div>
+            <div key={m.track + m.name} className="mod-row"><div className="row between"><span>{m.name}{m.track === "ai" && <span className="pill hot">AI</span>}</span><small className="muted">{m.done}/{m.total} נלמדו · {m.mastery}</small></div><Bar value={m.mastery} /></div>
           ))}
         </section>
 
         <section className="card">
-          <h3>איך אתם לומדים הכי טוב</h3>
-          {ins.bestByScore ? <>
-            <p>עד עכשיו התוצאות הטובות ביותר שלכם הגיעו אחרי שיעורים בפורמט <b>{formatById(ins.bestByScore.format).icon} {formatById(ins.bestByScore.format).name}</b> (ציון ממוצע {Math.round(ins.bestByScore.avgScore!)}).</p>
-            {ins.mismatch && <p className="muted">מעניין: הפורמט שדירגתם הכי גבוה הוא דווקא {formatById(ins.bestByRating!.format).name}.</p>}
-          </> : <p className="muted">אחרי כמה שיעורים בפורמטים שונים נדע איזה סוג שיעור מביא אתכם לציונים הכי גבוהים, והשיעורים יותאמו לזה.</p>}
-          <Link to="/insights" className="link">לפירוט המלא</Link>
+          <h3>ביצועים</h3>
+          <div className="kv"><span>פורמט מוביל</span><b>{ins.bestByScore ? formatById(ins.bestByScore.format).name : "—"}</b></div>
+          {ins.bestByScore && <div className="kv"><span>ציון ממוצע בו</span><b>{Math.round(ins.bestByScore.avgScore!)}</b></div>}
+          <Link to="/insights" className="link">לכל התובנות</Link>
           {d.interviews.filter((x) => x.score != null).length > 0 && <>
-            <h4>סימולציות אחרונות</h4>
+            <h4>ראיונות אחרונים</h4>
             <ul className="list">{d.interviews.filter((x) => x.score != null).slice(-3).reverse().map((x) => <li key={x.id}><Link to={`/interview/${x.id}`}><span>{x.config.title ?? x.type}</span><span className="pill">{Math.round(x.score!)}</span></Link></li>)}</ul>
           </>}
         </section>
       </div>
 
-      {notes.length > 0 && <section className="card"><h3>מה השוק מצפה עכשיו</h3><ul>{notes.map((n, i) => <li key={i}>{n}</li>)}</ul><Link to="/plan" className="link">לתוכנית ולעדכוני שוק</Link></section>}
+      {notes.length > 0 && <section className="card"><h3>מגמות בשוק</h3><ul>{notes.map((n, i) => <li key={i}>{n}</li>)}</ul><Link to="/plan" className="link">לתוכנית</Link></section>}
     </div>
   );
 }

@@ -52,7 +52,7 @@ export function CodeLab({ test, onSubmit, busy }: { test: CodeTest; onSubmit: (s
       <div className="card">
         <h3>{test.title}</h3>
         <Md>{test.statement}</Md>
-        {test.hints.slice(0, hints).map((h, i) => <div key={i} className="hint">💡 {h}</div>)}
+        {test.hints.slice(0, hints).map((h, i) => <div key={i} className="hint">{h}</div>)}
         {hints < test.hints.length && <button className="btn ghost small" onClick={() => setHints(hints + 1)}>רמז ({hints + 1}/{test.hints.length})</button>}
       </div>
       <div className="card">
@@ -62,17 +62,15 @@ export function CodeLab({ test, onSubmit, busy }: { test: CodeTest; onSubmit: (s
             <button className={lang === "py" ? "on" : ""} onClick={() => { setLang("py"); setResults(null); }}>Python</button>
           </div>
           <div className="row">
-            <button className="btn" disabled={running || !tests || busy} onClick={run}>{running ? "מריץ…" : "הרצת בדיקות"}</button>
-            <button className="btn primary" disabled={running || !tests || busy} onClick={submit}>הגשה לציון</button>
+            <button className="btn" disabled={running || !tests || busy} onClick={run}>{running ? "מריץ…" : "הרצה"}</button>
+            <button className="btn primary" disabled={running || !tests || busy} onClick={submit}>הגשה</button>
           </div>
         </div>
         <CodeEditor value={code[lang]} lang={lang} onChange={(v) => setCode({ ...code, [lang]: v })} />
-        {lang === "py" && <small className="muted">ההרצה הראשונה ב-Python טוענת את המפרש לדפדפן ולוקחת כמה שניות.</small>}
-        {tests && tests.length < test.tests.length && <small className="muted"> · {test.tests.length - tests.length} בדיקות הוסרו כי לא עברו אימות.</small>}
         {error && <pre className="error ltr">{error}</pre>}
         {results && (
           <div className="tests">
-            <b>{passed}/{results.length} בדיקות עברו</b>
+            <b>{passed}/{results.length} עברו</b>
             {results.map((r, i) => (
               <div key={i} className={`test ltr ${r.ok ? "pass" : "fail"}`}>
                 <span>{r.ok ? "✓" : "✗"} {test.fn_name}({r.args.slice(1, -1)})</span>

@@ -7,18 +7,11 @@ export function Md({ children }: { children: string }) {
   return <div className="md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{children || ""}</ReactMarkdown></div>;
 }
 
-/** Shown while the AI works. Long jobs get rotating messages so the wait doesn't look like a hang. */
-export function Busy({ label, steps = [] }: { label: string; steps?: string[] }) {
-  const [i, setI] = useState(0);
-  useEffect(() => {
-    if (!steps.length) return;
-    const t = setInterval(() => setI((x) => Math.min(x + 1, steps.length - 1)), 7000);
-    return () => clearInterval(t);
-  }, [steps.length]);
+export function Busy({ label, hint }: { label: string; hint?: string }) {
   return (
     <div className="busy" role="status">
       <div className="spinner" />
-      <div><b>{label}</b>{steps.length > 0 && <div className="muted">{steps[i]}</div>}</div>
+      <div><b>{label}</b>{hint && <div className="muted">{hint}</div>}</div>
     </div>
   );
 }
