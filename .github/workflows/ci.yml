@@ -1,0 +1,33 @@
+# Every push and pull request: types, lint, unit tests, the lesson quality checker on its fixture, and a build.
+# No step calls the Claude API or the database, so CI is free and needs no secrets.
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Type check
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Unit tests
+        run: npm test
+      - name: Lesson quality checker (fixture)
+        run: npx tsx scripts/eval-lessons.ts --file scripts/eval-fixtures/sample-lesson.json
+      - name: Build
+        run: npx vite build

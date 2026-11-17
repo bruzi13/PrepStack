@@ -3,6 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { IMPROVE_GOALS, LEVELS, TARGET_LEVELS } from "@shared/catalog";
 import { useMe } from "@/app/AppContext";
 import { auth, DEMO } from "@/services/store";
+import { useTheme, type ThemePref } from "@/app/theme";
+
+const THEMES: [ThemePref, string][] = [["system", "לפי המכשיר"], ["light", "בהיר"], ["dark", "כהה"]];
 
 export default function Settings() {
   const { user, profile, saveProfile } = useMe();
@@ -15,11 +18,19 @@ export default function Settings() {
   const [target, setTarget] = useState(a.target_level ?? (a.level === "student" ? "junior" : a.level ?? "mid"));
   const [pw, setPw] = useState("");
   const [msg, setMsg] = useState("");
+  const [theme, setTheme] = useTheme();
 
   return (
     <div className="page">
       <div className="page-head"><h1>הגדרות</h1><p className="muted" dir="ltr">{user.email}</p></div>
       {msg && <div className="notice">{msg}</div>}
+      <fieldset className="card theme-pick">
+        <legend><h3>מראה</h3></legend>
+        <div className="seg">{THEMES.map(([k, label]) => (
+          <label key={k} className={theme === k ? "on" : ""}><input type="radio" name="theme" value={k} checked={theme === k} onChange={() => setTheme(k)} />{label}</label>
+        ))}</div>
+        <small className="muted">ההגדרה נשמרת במכשיר הזה.</small>
+      </fieldset>
       <div className="card form">
         <h3>הפרופיל שלי</h3>
         <label>שם<input value={name} onChange={(e) => setName(e.target.value)} /></label>

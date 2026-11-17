@@ -27,5 +27,5 @@ export async function underDailyLimit(db: SupabaseClient, userId: string): Promi
   return (count ?? 0) <= limit;
 }
 
-export const json = (body: unknown, status = 200) =>
+export const jsonLegacy = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });

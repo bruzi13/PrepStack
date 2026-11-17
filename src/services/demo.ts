@@ -1,6 +1,7 @@
 // Demo mode only (npm run demo): canned stand-ins for the AI engine so every screen can be tried
 // without a server. The content here is sample material, not generated for the learner.
 import { AI_TRACK_SPINE, formatById, interviewById, TEST_FOR_KIND, type TopicKind } from "@shared/catalog";
+import { db } from "@/services/store";
 
 type In = Record<string, any>;
 const blank = { title: "", md: "", mermaid: "", question: "", options: [], answer: 0, explain: "", steps: [], cards: [] };
@@ -124,19 +125,45 @@ const review = (score: number) => ({
   model_answer: "תשובה חזקה מתחילה בדרישות, מציגה תכנון פשוט, ואז מעמיקה בצוואר הבקבוק.", next_steps: ["לתרגל הסבר בקול רם", "לחזור על נושא ה-caching"],
 });
 
-export function mockJob(kind: string, input: In): unknown {
+/** Demo stand-in for the server's jobs: same argument shapes, results written to the browser's demo store. */
+export async function mockJob(kind: string, input: In, userId: string): Promise<unknown> {
   switch (kind) {
     case "diagnostic": return diagnostic();
-    case "plan": return plan(input);
-    case "lesson": return lesson(input);
-    case "grade": {
-      const s = input.submission ?? {};
-      const base = input.kind === "code" ? Math.round((s.passed ?? 0) / Math.max(1, s.total ?? 1) * 75) + 15
-        : input.kind === "architecture" ? Math.min(90, 25 + (s.nodes?.length ?? 0) * 8 + (s.edges?.length ?? 0) * 4)
-        : Math.min(88, 30 + Math.round(String(s.answer ?? s.open ?? "").length / 6));
-      return review(base);
+    case "plan": {
+      const [p] = await db.list<In>("prep_profiles", { eq: { id: userId } });
+      return plan({ ...input, profile: { ...(p?.answers ?? {}) } });
     }
-    case "debrief": return {
+    case "lesson": {
+      const [t] = await db.list<In>("prep_topics", { eq: { id: input.topicId } });
+      if (!t) throw new Error("הנושא לא נמצא.");
+      const [row] = await db.insert<In>("prep_lessons", { user_id: userId, topic_id: t.id, topic_kind: t.kind, format: input.format, choice: input.choice ?? null, status: "ready", content: lesson({ topic: t, format: input.format }) });
+      return { lesson: row, source: "personal" };
+    }
+    case "complete": {
+      const [l] = await db.list<In>("prep_lessons", { eq: { id: input.lessonId } });
+      const s = input.submission ?? {}, test = l?.content?.test ?? {};
+      let score: number, rv: In | null = null, extra: string | undefined;
+      if (input.kind === "quiz") {
+        const quiz = (test.quiz ?? []) as { answer: number }[];
+        score = quiz.length ? (quiz.filter((q, i) => s.answers?.[i] === q.answer).length / quiz.length) * 100 : 0;
+      } else {
+        const base = input.kind === "code" ? Math.round((s.passed ?? 0) / Math.max(1, s.total ?? 1) * 75) + 15
+          : input.kind === "architecture" ? Math.min(90, 25 + (s.nodes?.length ?? 0) * 8 + (s.edges?.length ?? 0) * 4)
+          : Math.min(88, 30 + Math.round(String(s.answer ?? s.open ?? "").length / 6));
+        rv = review(base); score = base;
+        if (input.kind === "code") extra = `${s.passed ?? 0}/${s.total ?? 0} בדיקות עברו`;
+      }
+      score = Math.round(score);
+      await db.insert("prep_attempts", { user_id: userId, lesson_id: l.id, topic_id: l.topic_id, kind: input.kind, submission: s, score, review: rv });
+      await db.update("prep_lessons", l.id, { status: "done", score, minutes: input.minutes, completed_at: new Date().toISOString() });
+      return { score, review: rv, extra };
+    }
+    case "debrief": {
+      const [iv] = await db.list<In>("prep_interviews", { eq: { id: input.interviewId } });
+      input = { ...input, type: iv?.type };
+    }
+    // falls through to the sample scorecard
+    case "debrief-sample": return {
       score: 68, hire_signal: "lean_yes", summary: "ראיון סביר (משוב לדוגמה של מצב ההדגמה).",
       dimensions: interviewById(input.type).rubric.map((name, i) => ({ name, score: 60 + ((i * 7) % 30), comment: "הערה לדוגמה." })),
       strengths: ["שאלת שאלות הבהרה", "חשיבה בקול רם"], improvements: ["לבדוק מקרי קצה לפני שמכריזים שסיימת", "לנמק החלטות עם מספרים"],
@@ -165,4 +192,29 @@ export async function mockChat(body: In, onText: (s: string) => void): Promise<s
   let shown = "";
   for (const w of text.split(/(?<=\s)/)) { shown += w; onText(shown); await new Promise((r) => setTimeout(r, 25)); }
   return text;
+}
+
+/** Sample numbers for the maintainer board in demo mode (clearly not real usage). */
+export function mockAdmin(): unknown {
+  const today = new Date();
+  const by_day = Array.from({ length: 30 }, (_, i) => {
+    const d = new Date(today.getTime() - (29 - i) * 864e5);
+    return { day: d.toISOString().slice(0, 10), value: +(0.4 + ((i * 37) % 11) / 10 + (i > 22 ? 0.8 : 0)).toFixed(2) };
+  });
+  const d30 = by_day.reduce((a, b) => a + b.value, 0);
+  return {
+    generated_at: today.toISOString(), demo: true,
+    users: { total: 128, new_7d: 14, active_7d: 37, maintainers: 1 },
+    cost: { today: by_day[29].value, d7: by_day.slice(-7).reduce((a, b) => a + b.value, 0), d30, by_day,
+      by_feature: [{ name: "lesson_body", value: d30 * 0.38 }, { name: "lesson_test", value: d30 * 0.2 }, { name: "grade", value: d30 * 0.17 }, { name: "chat_interview", value: d30 * 0.14 }, { name: "plan", value: d30 * 0.08 }, { name: "personal_note", value: d30 * 0.03 }],
+      by_model: [{ name: "claude-sonnet-5-5", value: d30 * 0.86 }, { name: "claude-haiku-5-5", value: d30 * 0.14 }],
+      top_users: [{ name: "נועה", value: 3.1 }, { name: "דניאל", value: 2.4 }, { name: "מאיה", value: 1.9 }],
+      tokens_30d: { input: 18_400_000, output: 3_900_000, cache_read: 6_200_000 } },
+    lessons: { created_7d: 212, cached_7d: 23, templates_ready: 41, templates_stale: 2, templates_generating: 1, tests_active: 171,
+      top_templates: [{ id: "00000000-0000-4000-8000-000000000001", topic_key: "caching-ו-cdn", format: "worked_examples", level_band: "mid", variant: "full", uses: 19, status: "ready" }] },
+    jobs: { total_7d: 498, failed_7d: 6, by_kind: [{ name: "lesson", value: 212 }, { name: "complete", value: 188 }, { name: "debrief", value: 41 }], recent_failures: [{ kind: "lesson", error: "משהו השתבש אצלנו. נסו שוב.", created_at: today.toISOString(), request_id: "demo-1234" }] },
+    errors: [{ source: "web", event: "web.error", message: "TypeError: Cannot read properties of undefined (reading 'map')", created_at: today.toISOString(), request_id: "demo-5678" }],
+    requests: [{ id: "00000000-0000-4000-8000-000000000002", request: "אני רוצה ללמוד OpenTelemetry לעומק", title: "OpenTelemetry: traces, metrics ו-logs", description: "לדעת להוסיף tracing לשירות ולקרוא אותו", kind: "practical", created_at: today.toISOString() }],
+    rollout_percent: 10,
+  };
 }

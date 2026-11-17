@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import mermaid from "mermaid";
 
-mermaid.initialize({ startOnLoad: false, theme: "neutral", securityLevel: "strict", fontFamily: "Heebo, sans-serif" });
+mermaid.initialize({ startOnLoad: false, theme: "neutral", securityLevel: "strict", fontFamily: "Manrope, \"IBM Plex Sans Hebrew\", sans-serif" });
 let seq = 0;
 
 /** Renders a Mermaid diagram. If the source doesn't parse (AI-written diagrams sometimes don't), shows it as text. */

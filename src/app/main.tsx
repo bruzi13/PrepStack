@@ -4,7 +4,11 @@ import { BrowserRouter } from "react-router-dom";
 import { AppProvider } from "@/app/AppContext";
 import App from "@/app/App";
 import "@/styles/global.css";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { installMonitor } from "@/app/monitor";
+
+installMonitor();
 
 createRoot(document.getElementById("root")!).render(
-  <StrictMode><BrowserRouter><AppProvider><App /></AppProvider></BrowserRouter></StrictMode>,
+  <StrictMode><ErrorBoundary><BrowserRouter><AppProvider><App /></AppProvider></BrowserRouter></ErrorBoundary></StrictMode>,
 );

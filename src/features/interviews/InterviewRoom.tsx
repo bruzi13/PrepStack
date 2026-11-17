@@ -40,6 +40,7 @@ export default function InterviewRoom() {
   const [lang, setLang] = useState<Lang>("js");
   const [left, setLeft] = useState<number | null>(null);
   const [aiAsk, setAiAsk] = useState("");
+  const [pane, setPane] = useState<"chat" | "ws">("chat");
   const canvas = useRef<Canvas>(emptyCanvas());
   const opened = useRef(false);
 
@@ -70,11 +71,12 @@ export default function InterviewRoom() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  const ticking = left != null;
   useEffect(() => {
-    if (left == null || iv?.status !== "live") return;
+    if (!ticking || iv?.status !== "live") return;
     const t = setInterval(() => setLeft((s) => (s == null ? s : Math.max(0, s - 1))), 1000);
     return () => clearInterval(t);
-  }, [left == null, iv?.status]);
+  }, [ticking, iv?.status]);
 
   function send(text: string) { if (!iv) return; const next = [...msgs, { role: "user" as const, content: text }]; setMsgs(next); turn(next, iv); }
 
@@ -96,8 +98,10 @@ export default function InterviewRoom() {
     setDebriefing(true); setErr("");
     try {
       const ws = { code, lang, canvas: canvas.current };
-      const scorecard = await runJob<Scorecard>("debrief", { type: iv.type, config: iv.config, transcript: msgs.filter((m) => m.content !== "[START]"), workspace: workspace() || null }, user.id);
-      await db.update("prep_interviews", iv.id, { status: "done", scorecard, score: scorecard.score, transcript: msgs, workspace: ws });
+      // The server reads the interview from the database, so save the final transcript and workspace first.
+      await db.update("prep_interviews", iv.id, { transcript: msgs, workspace: { ...ws, text: workspace() || null } });
+      const scorecard = await runJob<Scorecard>("debrief", { interviewId: iv.id }, user.id);
+      await db.update("prep_interviews", iv.id, { status: "done", scorecard, score: scorecard.score });
       setIv({ ...iv, status: "done", scorecard, score: scorecard.score });
     } catch (e) { setErr((e as Error).message); }
     setDebriefing(false);
@@ -115,18 +119,22 @@ export default function InterviewRoom() {
     <div className="page room">
       <div className="row between page-head">
         <div><h1>{type.title}</h1><p className="muted">{iv.config.level} · {iv.config.lang === "en" ? "English" : "עברית"}</p></div>
-        <div className="row"><span className={`clock ${left != null && left < 120 ? "low" : ""}`}>{left === 0 ? "הזמן נגמר" : mm}</span>
+        <div className="row"><span role="timer" aria-label="הזמן שנותר" className={`clock ${left != null && left < 120 ? "low" : ""}`}>{left === 0 ? "הזמן נגמר" : mm}</span>
           <button className="btn primary" disabled={busy || answered === 0} onClick={() => { if (window.confirm("לסיים את הראיון ולקבל משוב?")) finish(); }}>סיום</button></div>
       </div>
       <ErrorBox msg={err} />
-      <div className={`room-grid ${type.workspace === "none" ? "solo" : ""}`}>
+      {type.workspace !== "none" && <div className="seg room-tabs" role="group" aria-label="תצוגה">
+        <button aria-pressed={pane === "chat"} className={pane === "chat" ? "on" : ""} onClick={() => setPane("chat")}>שיחה</button>
+        <button aria-pressed={pane === "ws"} className={pane === "ws" ? "on" : ""} onClick={() => setPane("ws")}>{type.workspace === "code" ? "עורך קוד" : "לוח"}</button>
+      </div>}
+      <div className={`room-grid ${type.workspace === "none" ? "solo" : ""}`} data-pane={pane}>
         <ChatBox messages={msgs} streaming={streaming} busy={busy} onSend={send} lang={iv.config.lang} />
         {type.workspace === "code" && <div className="card ws">
           <div className="row between"><b>עורך משותף</b><div className="seg"><button className={lang === "js" ? "on" : ""} onClick={() => setLang("js")}>JavaScript</button><button className={lang === "py" ? "on" : ""} onClick={() => setLang("py")}>Python</button></div></div>
           <CodeEditor value={code} onChange={setCode} lang={lang} height="420px" />
           {type.id === "ai_assisted" && <div className="ai-tool">
             <b>עוזר AI</b>
-            <div className="row"><input dir="auto" value={aiAsk} onChange={(e) => setAiAsk(e.target.value)} onKeyDown={(e) => e.key === "Enter" && askAi()} placeholder="בקשו מהעוזר לכתוב, להסביר או לבדוק קוד…" /><button className="btn" disabled={busy || !aiAsk.trim()} onClick={askAi}>שאלו</button></div>
+            <div className="row"><input dir="auto" value={aiAsk} onChange={(e) => setAiAsk(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && askAi()} placeholder="בקשו מהעוזר לכתוב, להסביר או לבדוק קוד…" /><button className="btn" disabled={busy || !aiAsk.trim()} onClick={askAi}>שאלו</button></div>
           </div>}
         </div>}
         {type.workspace === "canvas" && <div className="card ws"><b>לוח ארכיטקטורה משותף</b><ArchCanvas value={canvas.current} onChange={(c) => { canvas.current = c; }} height={400} /></div>}

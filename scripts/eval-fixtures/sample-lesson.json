@@ -1,0 +1,98 @@
+{
+ "_expect": {
+  "format": "worked_examples",
+  "kind": "coding"
+ },
+ "title": "Hash tables ו-heaps",
+ "intro": "בשיעור הזה נפתור בעיית top-k עם מפת ספירה ו-heap.",
+ "blocks": [
+  {
+   "type": "text",
+   "title": "הרעיון",
+   "md": "סופרים עם Map, ושומרים heap בגודל k.",
+   "mermaid": "",
+   "question": "",
+   "options": [],
+   "answer": 0,
+   "explain": "",
+   "steps": [],
+   "cards": []
+  },
+  {
+   "type": "example",
+   "title": "דוגמה",
+   "md": "```js\nconst c = new Map();\n```",
+   "mermaid": "",
+   "question": "",
+   "options": [],
+   "answer": 0,
+   "explain": "",
+   "steps": [],
+   "cards": []
+  },
+  {
+   "type": "check",
+   "title": "בדיקת הבנה",
+   "md": "",
+   "mermaid": "",
+   "question": "מה הסיבוכיות?",
+   "options": [
+    "O(n log k)",
+    "O(n²)"
+   ],
+   "answer": 0,
+   "explain": "heap בגודל k",
+   "steps": [],
+   "cards": []
+  }
+ ],
+ "takeaways": [
+  "Map לספירה",
+  "heap בגודל k"
+ ],
+ "interview_tips": [
+  "לומר את הסיבוכיות בקול"
+ ],
+ "test": {
+  "type": "code",
+  "quiz": [],
+  "open_question": "",
+  "open_rubric": "",
+  "architecture": {
+   "prompt": "",
+   "requirements": [],
+   "constraints": [],
+   "rubric": []
+  },
+  "practical": {
+   "task": "",
+   "deliverable": "",
+   "rubric": []
+  },
+  "code": {
+   "title": "Top K",
+   "statement": "החזירו את k השכיחים",
+   "fn_name": "topK",
+   "starter_js": "function topK(nums, k) {}",
+   "starter_py": "def topK(nums, k):\n    pass",
+   "reference_js": "function topK(nums, k) { const c = new Map(); for (const n of nums) c.set(n, (c.get(n) || 0) + 1); return [...c].sort((a, b) => b[1] - a[1] || a[0] - b[0]).slice(0, k).map(([n]) => n); }",
+   "tests": [
+    {
+     "args_json": "[[1,1,1,2,2,3],2]",
+     "expected_json": "[1,2]"
+    },
+    {
+     "args_json": "[[1],1]",
+     "expected_json": "[1]"
+    },
+    {
+     "args_json": "[[4,4,5,5,6],2]",
+     "expected_json": "[4,5]"
+    }
+   ],
+   "hints": [
+    "Map"
+   ]
+  }
+ }
+}

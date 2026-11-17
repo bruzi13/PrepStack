@@ -60,7 +60,7 @@ export default function Onboarding() {
     if (i < steps.length - 1) { setI(i + 1); return; }
     setPhase("loading-quiz"); setErr("");
     try {
-      const r = await runJob<{ areas: string[]; questions: DQ[] }>("diagnostic", { profile: finalAnswers() }, user!.id);
+      const r = await runJob<{ areas: string[]; questions: DQ[] }>("diagnostic", { answers: finalAnswers() }, user!.id);
       setQuiz(r); setPhase("quiz");
     } catch (e) { setErr((e as Error).message); setPhase("form"); }
   }

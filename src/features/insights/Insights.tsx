@@ -33,7 +33,7 @@ export default function Insights() {
 
       <section className="card">
         <h3>לפי פורמט</h3>
-        <div className="table-wrap"><table>
+        <div className="table-wrap" role="region" aria-label="טבלת הפורמטים" tabIndex={0}><table>
           <thead><tr><th>פורמט</th><th>שיעורים</th><th>ציון ממוצע</th><th>דירוג</th></tr></thead>
           <tbody>{ins.rows.map((r) => { const f = formatById(r.format); return (
             <tr key={r.format}><td>{f.name}</td><td>{r.n}</td>

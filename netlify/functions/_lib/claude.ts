@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { recordUsage } from "../_core/usage";
 
 // Lessons, plans, grading and research: a strong model. Live chat (interviewer, tutor, AI pair): a fast, cheap one.
 export const MODEL = process.env.CLAUDE_MODEL || "claude-sonnet-5-5";
@@ -38,15 +39,16 @@ function parseJson(text: string): Json {
 }
 
 /** One request that must come back as JSON matching `schema`. Streams so long outputs don't hit HTTP timeouts. */
-export async function askJson(opts: { system: string; user: string; schema: Json; effort?: Effort; maxTokens?: number }): Promise<Json> {
+export async function askJson(opts: { system: string; user: string; schema: Json; effort?: Effort; maxTokens?: number; model?: string; feature?: string }): Promise<Json> {
+  const model = opts.model ?? MODEL;
   const run = (strict: boolean) => client().beta.messages.stream({
-    model: MODEL,
+    model,
     max_tokens: opts.maxTokens ?? 32000,
     // Without enforced structured output, the schema goes into the prompt instead.
     system: strict ? opts.system : `${opts.system}\n\nReply with only one JSON object that matches this JSON schema exactly (every field present). No prose, no code fences.\n${JSON.stringify(opts.schema)}`,
     messages: [{ role: "user", content: opts.user }],
     output_config: strict ? { effort: opts.effort ?? "medium", format: { type: "json_schema", schema: opts.schema } } : { effort: opts.effort ?? "medium" },
-    ...fallbackFor(MODEL),
+    ...fallbackFor(model),
   }).finalMessage();
   let msg;
   try {
@@ -56,6 +58,7 @@ export async function askJson(opts: { system: string; user: string; schema: Json
     if (e instanceof Anthropic.BadRequestError && /grammar|schema/i.test(e.message)) msg = await run(false);
     else throw e;
   }
+  await recordUsage(msg.model, msg.usage, opts.feature);
   if (msg.stop_reason === "refusal") throw new Error("המודל סירב לבקשה הזו. נסו לנסח אחרת.");
   if (msg.stop_reason === "max_tokens") throw new Error("התשובה נקטעה כי הייתה ארוכה מדי. נסו שוב.");
   return parseJson(textOf(msg.content as Array<{ type: string; text?: string }>));
@@ -77,6 +80,7 @@ export async function research(system: string, question: string): Promise<{ note
       ...fallbackFor(MODEL),
     });
     const msg = await stream.finalMessage();
+    await recordUsage(msg.model, msg.usage, "research");
     for (const block of msg.content) {
       if (block.type === "text") notes += block.text;
       // A successful search result is a list; an error is a single object.

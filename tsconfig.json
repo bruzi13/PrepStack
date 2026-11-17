@@ -34,6 +34,9 @@
     "src",
     "netlify",
     "shared",
-    "vite.config.ts"
+    "vite.config.ts",
+    "tests",
+    "scripts",
+    "eslint.config.js"
   ]
 }

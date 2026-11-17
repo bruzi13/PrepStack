@@ -16,12 +16,44 @@ export function Busy({ label, hint }: { label: string; hint?: string }) {
   );
 }
 
+/** A long AI job (about a minute): named steps that advance on a timer so the wait reads as progress, not a hang.
+ *  The steps are time-based, not reported by the server; the last one waits until the job really ends. */
+export function StepWait({ title, steps, every = 12000 }: { title: string; steps: string[]; every?: number }) {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setI((x) => Math.min(x + 1, steps.length - 1)), every);
+    return () => clearInterval(t);
+  }, [steps.length, every]);
+  return (
+    <div className="card stepwait" role="status" aria-live="polite">
+      <h2>{title}</h2>
+      <div className="bar"><div className="bar-fill ok" style={{ width: `${((i + 0.5) / steps.length) * 100}%` }} /></div>
+      <ol>{steps.map((s, k) => (
+        <li key={s} className={k < i ? "done" : k === i ? "now" : ""} aria-current={k === i ? "step" : undefined}>
+          <span className="dot" aria-hidden>{k < i ? "✓" : k + 1}</span>{s}{k === i && <span className="spinner sm" aria-hidden />}
+        </li>
+      ))}</ol>
+    </div>
+  );
+}
+
+/** Where the learner is inside a lesson. */
+export function LessonSteps({ at }: { at: 0 | 1 | 2 }) {
+  const names = ["לימוד", "מבחן", "ציון ומשוב"];
+  return (
+    <ol className="lesson-steps" aria-label="שלבי השיעור">{names.map((n, k) => (
+      <li key={n} className={k < at ? "done" : k === at ? "now" : ""} aria-current={k === at ? "step" : undefined}><span className="dot" aria-hidden>{k < at ? "✓" : k + 1}</span>{n}</li>
+    ))}</ol>
+  );
+}
+
 export const ErrorBox = ({ msg, retry }: { msg: string; retry?: () => void }) =>
   msg ? <div className="error" role="alert">{msg} {retry && <button className="btn small" onClick={retry}>נסו שוב</button>}</div> : null;
 
-export function Bar({ value, tone }: { value: number; tone?: string }) {
-  const t = tone ?? (value >= 85 ? "good" : value >= 70 ? "ok" : value >= 40 ? "warn" : "bad");
-  return <div className="bar"><div className={`bar-fill ${t}`} style={{ width: `${Math.max(0, Math.min(100, value))}%` }} /></div>;
+export function Bar({ value, tone, label }: { value: number; tone?: string; label?: string }) {
+  const v = Math.max(0, Math.min(100, value));
+  const t = tone ?? (v >= 85 ? "good" : v >= 70 ? "ok" : v >= 40 ? "warn" : "bad");
+  return <div className="bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(v)} aria-label={label}><div className={`bar-fill ${t}`} style={{ width: `${v}%` }} /></div>;
 }
 
 export function ScoreRing({ score, size = 96, label }: { score: number; size?: number; label?: string }) {

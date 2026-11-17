@@ -24,7 +24,7 @@ export default function AuthPage() {
   return (
     <div className="center">
       <form className="card auth" onSubmit={submit}>
-        <Link to="/" className="brand"><span className="brand-mark" aria-hidden />Prep<span>Stack</span></Link>
+        <Link to="/" className="brand"><span className="brand-mark" aria-hidden />PrepStack</Link>
         <h2>{mode === "up" ? "יצירת חשבון" : mode === "in" ? "התחברות" : "איפוס סיסמה"}</h2>
         {DEMO && <p className="muted">מצב הדגמה: אפשר להזין כל אימייל וסיסמה.</p>}
         {mode === "up" && <label>שם<input required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoComplete="name" /></label>}

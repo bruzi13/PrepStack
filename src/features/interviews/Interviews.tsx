@@ -50,6 +50,12 @@ export default function Interviews() {
         <button className="btn primary big" onClick={start}>התחלה</button>
       </div>}
 
+      {past.length === 0 && !pick && <section className="card empty">
+        <div className="empty-art" aria-hidden><span /><span /><span /></div>
+        <h3>עוד אין סימולציות</h3>
+        <p className="muted">כל סימולציה נגמרת בכרטיס ציונים כמו של ועדת גיוס, והנושאים החלשים נכנסים לתוכנית. בחרו סוג ראיון למעלה כדי להתחיל.</p>
+      </section>}
+
       {past.length > 0 && <section className="card"><h3>היסטוריה</h3>
         <ul className="list">{past.map((x) => <li key={x.id}><Link to={`/interview/${x.id}`}><span>{x.config.title ?? x.type} <small className="muted">· {x.created_at.slice(0, 10)}</small></span><span className="pill">{x.status === "done" && x.score != null ? Math.round(x.score) : "—"}</span></Link></li>)}</ul>
       </section>}

@@ -46,6 +46,7 @@ export interface Lesson {
   id: string; user_id: string; topic_id: string; topic_kind: TopicKind; format: FormatId;
   choice: unknown; content: LessonContent; status: "ready" | "done"; score: number | null;
   minutes: number | null; completed_at: string | null; created_at: string;
+  template_id?: string | null; test_id?: string | null; personal?: { note: string; weak_points: string[] } | null;
 }
 export interface Review {
   score: number; verdict: string; strengths: string[];
@@ -58,7 +59,7 @@ export interface Attempt {
 }
 export interface Feedback {
   id: string; user_id: string; lesson_id: string; topic_kind: string; format: FormatId;
-  rating: number; difficulty: number; wanted: string; comment: string; created_at: string;
+  rating: number; difficulty: number; wanted: string; comment: string; content_error?: boolean; created_at: string;
 }
 export interface ChatMsg { role: "user" | "assistant"; content: string; tool?: boolean }
 export interface Scorecard {

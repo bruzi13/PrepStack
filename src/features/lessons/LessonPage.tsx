@@ -6,23 +6,23 @@ import { FORMATS, formatById, KIND_LABEL, TEST_LABEL, type FormatId } from "@sha
 import { useMe } from "@/app/AppContext";
 import { chooseFormat, observations, type Choice } from "@/learning/adapt";
 import { chat, formatPriors, runJob } from "@/services/ai";
-import { profileBrief } from "@/services/plans";
 import { afterTest } from "@/learning/srs";
 import { db } from "@/services/store";
-import type { Attempt, Block, Canvas, ChatMsg, Feedback, Lesson, LessonContent, Review, Topic } from "@/types";
+import type { Block, Canvas, ChatMsg, Feedback, Lesson, LessonContent, Review, Topic } from "@/types";
 import { ArchCanvas, emptyCanvas } from "@/components/ArchCanvas";
 import { ChatBox } from "@/components/ChatBox";
 import { CodeLab, type CodeSubmission } from "@/components/CodeLab";
-import { Busy, Diagram, ErrorBox, Md, ReviewView } from "@/components/ui";
+import { Busy, Diagram, ErrorBox, LessonSteps, Md, ReviewView, StepWait } from "@/components/ui";
 
 const WANTED = ["יותר דוגמאות", "יותר תרשימים", "יותר תרגול", "יותר עומק", "קצר יותר", "קצב איטי יותר"];
 
+const GEN_STEPS = ["בוחרים את דרך ההוראה שמתאימה לכם", "כותבים את השיעור לרמה ולסטאק שלכם", "מכינים דוגמאות ותרגילים", "בונים את המבחן המסכם"];
+
 export default function LessonPage() {
   const { topicId } = useParams();
-  const { user, profile } = useMe();
+  const { user } = useMe();
   const [topic, setTopic] = useState<Topic | null>(null);
   const [lesson, setLesson] = useState<Lesson | null>(null);
-  const [choice, setChoice] = useState<Choice | null>(null);
   const [stage, setStage] = useState<"loading" | "generating" | "learn" | "test" | "grading" | "result">("loading");
   const [err, setErr] = useState("");
   const [result, setResult] = useState<{ score: number; review: Review | null; extra?: string } | null>(null);
@@ -34,25 +34,20 @@ export default function LessonPage() {
     setStage("generating"); setErr("");
     try {
       const eq = { user_id: user.id };
-      const [lessons, feedback, priors, attempts] = await Promise.all([
+      const [lessons, feedback, priors] = await Promise.all([
         db.list<Lesson>("prep_lessons", { eq }), db.list<Feedback>("prep_feedback", { eq }), formatPriors().catch(() => []),
-        db.list<Attempt>("prep_attempts", { eq: { topic_id: t.id }, order: "created_at", asc: false, limit: 1 }),
       ]);
       const c = chooseFormat(observations(lessons, feedback), t.kind, priors, exclude);
       const format = force ?? c.format;
       const picked: Choice = force ? { ...c, format, reason: "בחרתם בפורמט הזה בעצמכם." } : c;
-      const content = await runJob<LessonContent>("lesson", {
-        topic: { title: t.title, description: t.description, kind: t.kind, module: t.module }, format,
-        profile: profileBrief(profile), mastery: t.mastery, review: t.reviews > 0,
-        weak_points: attempts[0]?.review?.issues?.map((x) => x.point) ?? [],
-      }, user.id);
-      const [row] = await db.insert<Lesson>("prep_lessons", {
-        user_id: user.id, topic_id: t.id, topic_kind: t.kind, format, content, status: "ready",
+      // The server loads the topic, profile and weak points itself, and saves the lesson.
+      const { lesson: row } = await runJob<{ lesson: Lesson; source: string }>("lesson", {
+        topicId: t.id, format, manual: !!force,
         choice: { reason: picked.reason, manual: !!force, table: picked.table.map((r) => ({ format: r.format, n: r.n, mean: +r.mean.toFixed(3), sampled: +r.sampled.toFixed(3) })) },
-      });
-      setChoice(picked); setLesson(row); started.current = Date.now(); setStage("learn");
+      }, user.id);
+      setLesson(row); started.current = Date.now(); setStage("learn");
     } catch (e) { setErr((e as Error).message); }
-  }, [user.id, profile]);
+  }, [user.id]);
 
   useEffect(() => {
     let alive = true;
@@ -64,7 +59,7 @@ export default function LessonPage() {
       setTopic(t); setIsReview(t.reviews > 0);
       const ready = (await db.list<Lesson>("prep_lessons", { eq: { topic_id: t.id, status: "ready" }, order: "created_at", asc: false, limit: 1 }))[0];
       if (!alive) return;
-      if (ready) { setLesson(ready); setChoice(null); started.current = Date.now(); setStage("learn"); }
+      if (ready) { setLesson(ready); started.current = Date.now(); setStage("learn"); }
       else generate(t);
     })().catch((e) => alive && setErr(e.message));
     return () => { alive = false; };
@@ -77,43 +72,36 @@ export default function LessonPage() {
     generate(topic, f, f ? [] : [lesson.format]);
   }
 
-  /** Save the outcome everywhere it matters: the attempt, the lesson, and the topic's mastery and next review date. */
-  async function finish(kind: string, submission: unknown, score: number, review: Review | null, extra?: string) {
-    if (!topic || !lesson) return;
-    const minutes = Math.min(120, (Date.now() - started.current) / 60000);
-    await db.insert("prep_attempts", { user_id: user.id, lesson_id: lesson.id, topic_id: topic.id, kind, submission, score, review });
-    await db.update("prep_lessons", lesson.id, { status: "done", score, minutes, completed_at: new Date().toISOString() });
-    const patch = afterTest(topic, score);
-    await db.update("prep_topics", topic.id, patch);
-    setTopic({ ...topic, ...patch } as Topic);
-    const rest = await db.list<Topic>("prep_topics", { eq: { plan_id: topic.plan_id }, order: "ord" });
-    setNextTopic(rest.find((t) => t.reviews === 0 && t.id !== topic.id) ?? null);
-    setResult({ score, review, extra }); setStage("result");
-  }
-
-  async function grade(kind: string, submission: Record<string, unknown>, combine?: (r: Review) => { score: number; extra?: string }) {
+  /** Submit the test. The server grades it and saves the score; here we update the topic's review schedule. */
+  async function submit(kind: "quiz" | "code" | "architecture" | "practical", submission: Record<string, unknown>) {
     if (!topic || !lesson) return;
     setStage("grading"); setErr("");
     try {
-      const review = await runJob<Review>("grade", { kind, topic: { title: topic.title }, profile: profileBrief(profile), test: testFor(lesson.content, kind), submission }, user.id);
-      const c = combine ? combine(review) : { score: review.score };
-      await finish(kind, submission, Math.round(c.score), review, c.extra);
+      const minutes = Math.min(120, (Date.now() - started.current) / 60000);
+      const r = await runJob<{ score: number; review: Review | null; extra?: string }>("complete", { lessonId: lesson.id, kind, submission, minutes }, user.id);
+      const patch = afterTest(topic, r.score);
+      await db.update("prep_topics", topic.id, patch);
+      setTopic({ ...topic, ...patch } as Topic);
+      const rest = await db.list<Topic>("prep_topics", { eq: { plan_id: topic.plan_id }, order: "ord" });
+      setNextTopic(rest.find((t) => t.reviews === 0 && t.id !== topic.id) ?? null);
+      setResult(r); setStage("result");
     } catch (e) { setErr((e as Error).message); setStage("test"); }
   }
 
   if (err && stage !== "test") return <div className="page"><ErrorBox msg={err} retry={topic ? () => generate(topic) : undefined} /><Link to="/plan" className="link">חזרה לתוכנית</Link></div>;
   if (stage === "loading" || !topic) return <Busy label="טוען…" />;
-  if (stage === "generating" || !lesson) return <Busy label="מכין שיעור…" />;
+  if (stage === "generating" || !lesson) return <div className="page lesson"><StepWait title={`מכינים את השיעור: ${topic.title}`} steps={GEN_STEPS} /></div>;
 
   const c = lesson.content, fmt = formatById(lesson.format), test = c.test;
 
   return (
     <div className="page lesson">
-      <Link to={topic.track === "ai" ? "/ai" : "/plan"} className="link">→ לתוכנית</Link>
+      <Link to={topic.track === "ai" ? "/plan?track=ai" : "/plan"} className="link">→ לתוכנית</Link>
       <div className="page-head">
         <h1>{c.title || topic.title}</h1>
         <p className="muted">{topic.module} · {KIND_LABEL[topic.kind]}{isReview ? " · שיעור חזרה" : ""}</p>
       </div>
+      <LessonSteps at={stage === "learn" ? 0 : stage === "result" ? 2 : 1} />
 
       {stage === "learn" && <>
         <div className="format-bar">
@@ -125,6 +113,7 @@ export default function LessonPage() {
             </div>
           </details>
         </div>
+        {lesson.personal?.note && <aside className="card personal-note" aria-label="הערה אישית"><b>במיוחד בשבילך</b><p>{lesson.personal.note}</p></aside>}
         <p className="intro">{c.intro}</p>
         {c.blocks.map((b, i) => <BlockView key={i} b={b} />)}
         {c.takeaways.length > 0 && <div className="card takeaways"><h3>סיכום</h3><ul>{c.takeaways.map((t, i) => <li key={i}>{t}</li>)}</ul>
@@ -138,14 +127,10 @@ export default function LessonPage() {
         {stage === "grading" && <Busy label="בודק…" />}
         <div style={{ display: stage === "grading" ? "none" : undefined }}>
           <button className="link" onClick={() => setStage("learn")}>→ לשיעור</button>
-          {test.type === "quiz" && <QuizTest test={test} onDone={(answers, open, mcq) => {
-            const sub = { answers, open, mcq_percent: mcq };
-            if (test.open_question && open.trim()) grade("quiz", sub, (r) => ({ score: 0.7 * mcq + 0.3 * r.score, extra: `שאלות אמריקאיות: ${Math.round(mcq)} · שאלה פתוחה: ${r.score}` }));
-            else finish("quiz", sub, Math.round(test.open_question ? 0.7 * mcq : mcq), null, test.open_question ? "לא ענית על השאלה הפתוחה (30% מהציון)." : undefined);
-          }} />}
-          {test.type === "code" && <CodeLab test={test.code} busy={false} onSubmit={(s: CodeSubmission) => grade("code", s as unknown as Record<string, unknown>, (r) => ({ score: r.score, extra: `${s.passed}/${s.total} בדיקות עברו` }))} />}
-          {test.type === "architecture" && <ArchTest test={test.architecture} onSubmit={(canvas) => grade("architecture", canvas as unknown as Record<string, unknown>)} />}
-          {test.type === "practical" && <PracticalTest test={test.practical} onSubmit={(answer) => grade("practical", { answer })} />}
+          {test.type === "quiz" && <QuizTest test={test} onDone={(answers, open) => submit("quiz", { answers, open })} />}
+          {test.type === "code" && <CodeLab test={test.code} busy={false} onSubmit={(s: CodeSubmission) => submit("code", s as unknown as Record<string, unknown>)} />}
+          {test.type === "architecture" && <ArchTest test={test.architecture} onSubmit={(canvas) => submit("architecture", canvas as unknown as Record<string, unknown>)} />}
+          {test.type === "practical" && <PracticalTest test={test.practical} onSubmit={(answer) => submit("practical", { answer })} />}
         </div>
       </>}
 
@@ -160,14 +145,6 @@ export default function LessonPage() {
       </>}
     </div>
   );
-}
-
-/** Only the part of the test the grader needs (and never the reference solution's tests verbatim for quiz). */
-function testFor(c: LessonContent, kind: string) {
-  const t = c.test;
-  return kind === "quiz" ? { open_question: t.open_question, open_rubric: t.open_rubric }
-    : kind === "code" ? { title: t.code.title, statement: t.code.statement, reference_js: t.code.reference_js }
-    : kind === "architecture" ? t.architecture : t.practical;
 }
 
 function BlockView({ b }: { b: Block }) {
@@ -278,7 +255,7 @@ function PracticalTest({ test, onSubmit }: { test: LessonContent["test"]["practi
 /** What the learner thought of the lesson. Compared later with how they actually scored. */
 function FeedbackForm({ lesson }: { lesson: Lesson }) {
   const { user } = useMe();
-  const [f, setF] = useState({ rating: 0, difficulty: 0, wanted: [] as string[], comment: "" });
+  const [f, setF] = useState({ rating: 0, difficulty: 0, wanted: [] as string[], comment: "", contentError: false });
   const [sent, setSent] = useState(false);
   if (sent) return <div className="notice">המשוב נשמר.</div>;
   return (
@@ -289,9 +266,10 @@ function FeedbackForm({ lesson }: { lesson: Lesson }) {
       <div className="seg">{[[1, "קל מדי"], [3, "בדיוק"], [5, "קשה מדי"]].map(([v, t]) => <button key={v} className={f.difficulty === v ? "on" : ""} onClick={() => setF({ ...f, difficulty: v as number })}>{t}</button>)}</div>
       <p className="q-label">בפעם הבאה</p>
       <div className="chips">{WANTED.map((w) => <button key={w} className={`chip ${f.wanted.includes(w) ? "on" : ""}`} onClick={() => setF({ ...f, wanted: f.wanted.includes(w) ? f.wanted.filter((x) => x !== w) : [...f.wanted, w] })}>{w}</button>)}</div>
-      <textarea dir="auto" rows={2} maxLength={2000} value={f.comment} onChange={(e) => setF({ ...f, comment: e.target.value })} placeholder="הערה (לא חובה)" />
+      <label className="check-row"><input type="checkbox" checked={f.contentError} onChange={(e) => setF({ ...f, contentError: e.target.checked })} />מצאתי טעות בתוכן השיעור</label>
+      <textarea dir="auto" rows={2} maxLength={2000} value={f.comment} onChange={(e) => setF({ ...f, comment: e.target.value })} placeholder={f.contentError ? "מה הטעות? (עוזר לנו לתקן)" : "הערה (לא חובה)"} />
       <button className="btn primary" disabled={!f.rating} onClick={async () => {
-        await db.insert("prep_feedback", { user_id: user.id, lesson_id: lesson.id, topic_kind: lesson.topic_kind, format: lesson.format, rating: f.rating, difficulty: f.difficulty || null, wanted: f.wanted.join(", "), comment: f.comment });
+        await db.insert("prep_feedback", { user_id: user.id, lesson_id: lesson.id, topic_kind: lesson.topic_kind, format: lesson.format, rating: f.rating, difficulty: f.difficulty || null, wanted: f.wanted.join(", "), comment: f.comment, content_error: f.contentError });
         setSent(true);
       }}>שליחה</button>
     </div>

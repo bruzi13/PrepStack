@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { TopicKind } from "@shared/catalog";
 import { useMe } from "@/app/AppContext";
 import { runJob } from "@/services/ai";
-import { addTopics, profileBrief } from "@/services/plans";
+import { addTopics } from "@/services/plans";
 import { db } from "@/services/store";
 import type { Plan, Topic } from "@/types";
 import { Busy, ErrorBox, ScoreRing } from "@/components/ui";
@@ -15,7 +15,7 @@ interface JD {
 }
 
 export default function JobMatch() {
-  const { user, profile } = useMe();
+  const { user } = useMe();
   const [text, setText] = useState("");
   const [r, setR] = useState<JD | null>(null);
   const [busy, setBusy] = useState(false);
@@ -26,9 +26,7 @@ export default function JobMatch() {
   async function analyse() {
     setBusy(true); setErr(""); setAdded(false);
     try {
-      const p = await plan();
-      const topics = p ? await db.list<Topic>("prep_topics", { eq: { plan_id: p.id } }) : [];
-      setR(await runJob<JD>("jd", { jd_text: text, profile: profileBrief(profile), existing_titles: topics.map((t) => t.title) }, user.id));
+      setR(await runJob<JD>("jd", { text }, user.id));
     } catch (e) { setErr((e as Error).message); }
     setBusy(false);
   }
