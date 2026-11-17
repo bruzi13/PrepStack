@@ -14,24 +14,27 @@ export const useMe = () => { const c = useContext(C); return { ...c, user: c.use
 export function AppProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [ready, setReady] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
+  // Whose profile is loaded. Until it matches the signed-in user we are still loading, so a user who
+  // already answered the questionnaire is never sent back to it while their profile is on its way.
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const ready = authChecked && (!user || loadedFor === user.id);
 
   useEffect(() => {
     let alive = true;
-    auth.current().then((u) => { if (alive) { setUser(u); if (!u) setReady(true); } });
+    auth.current().then((u) => { if (alive) { setUser(u); setAuthChecked(true); } });
     const off = auth.onChange((u) => setUser((prev) => (prev?.id === u?.id ? prev : u)));
     return () => { alive = false; off(); };
   }, []);
 
   useEffect(() => {
-    if (!user) { setProfile(null); return; }
+    if (!user) { setProfile(null); setLoadedFor(null); return; }
     let alive = true;
-    setReady(false);
     db.list<Profile>("prep_profiles", { eq: { id: user.id } })
       .then((rows) => { if (alive) { setProfile(rows[0] ?? null); setError(""); } })
       .catch((e) => alive && setError(e.message))
-      .finally(() => alive && setReady(true));
+      .finally(() => alive && setLoadedFor(user.id));
     return () => { alive = false; };
   }, [user]);
 

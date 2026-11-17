@@ -36,7 +36,7 @@ export default function App() {
   );
   if (error) return <div className="center"><ErrorBox msg={error} retry={() => location.reload()} /></div>;
   if (!profile?.answers?.onboarded && loc.pathname !== "/onboarding") return <Navigate to="/onboarding" replace />;
-  if (loc.pathname === "/onboarding") return <Onboarding />;
+  if (loc.pathname === "/onboarding") return profile?.answers?.onboarded ? <Navigate to="/" replace /> : <Onboarding />;
 
   return (
     <div className="shell">
