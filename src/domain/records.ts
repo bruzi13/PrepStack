@@ -65,6 +65,18 @@ export interface InterviewRecord {
   workspace: InterviewWorkspace | null; scorecard: Scorecard | null; score: number | null; status: InterviewStatus; created_at: string;
 }
 
+/** Where a notebook entry came from: a lesson test, the grader's review, a mock interview, or daily practice. */
+export type MistakeSource = "test" | "review" | "interview" | "practice";
+/** "choice": multiple choice with an answer key. "recall": the learner answers in their head and says if they knew it. */
+export type MistakeKind = "choice" | "recall";
+
+export interface MistakeRecord {
+  id: string; user_id: string; topic_id: string | null; topic_title: string; source: MistakeSource; kind: MistakeKind;
+  prompt: string; answer: string; explanation: string; options: string[] | null; correct_option: number | null;
+  box: number; due_on: string; reviews: number; last_result: boolean | null; resolved: boolean;
+  last_reviewed_at: string | null; created_at: string;
+}
+
 /** Anonymous cross-learner averages from the prep_format_priors database function. */
 export interface FormatPrior { format: string; topic_kind: string; n: number; avg_score: number }
 

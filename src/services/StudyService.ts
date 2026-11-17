@@ -5,6 +5,7 @@ import type { AiEngine, FormatChoiceRecord, TestKind } from "@/ai/AiEngine";
 import type { FeedbackRepository } from "@/data/repositories/FeedbackRepository";
 import type { LessonRepository } from "@/data/repositories/LessonRepository";
 import type { TopicRepository } from "@/data/repositories/TopicRepository";
+import type { PracticeService } from "@/services/PracticeService";
 import { FormatSelector, type FormatChoice } from "@/domain/FormatSelector";
 import { Lesson } from "@/domain/Lesson";
 import type { LessonFeedbackInput } from "@/domain/LessonFeedback";
@@ -37,6 +38,7 @@ export class StudyService {
     private readonly topics: TopicRepository,
     private readonly lessons: LessonRepository,
     private readonly feedback: FeedbackRepository,
+    private readonly practice: PracticeService,
   ) {}
 
   findTopic(topicId: string): Promise<Topic | null> {
@@ -73,6 +75,8 @@ export class StudyService {
     const minutes = Math.min(MAX_COUNTED_MINUTES, (Date.now() - startedAt) / 60_000);
     const outcome = await this.ai.runJob("complete", { lessonId: lesson.id, kind, submission, minutes });
     const updatedTopic = await this.topics.saveProgress(topic, this.scheduler.progressAfterTest(topic, outcome.score));
+    // The notebook is a bonus: if saving it fails, the learner still gets their result.
+    await this.practice.captureFromTest(topic.userId, topic, lesson, submission, outcome).catch((failure) => console.warn("mistakes not saved", failure));
     const planTopics = new TopicList(await this.topics.listForPlan(topic.planId));
     return { outcome, topic: updatedTopic, nextTopic: planTopics.nextToStudy(topic.id) ?? null };
   }

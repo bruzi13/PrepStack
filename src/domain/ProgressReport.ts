@@ -4,6 +4,7 @@ import { FormatSelector, type FormatInsights } from "./FormatSelector";
 import { LessonHistory, type Lesson } from "./Lesson";
 import type { LearnerProfile } from "./LearnerProfile";
 import type { LessonFeedback } from "./LessonFeedback";
+import type { Mistake } from "./Mistake";
 import type { MockInterview } from "./MockInterview";
 import type { StudyPlan } from "./StudyPlan";
 import type { Topic } from "./Topic";
@@ -15,6 +16,7 @@ export interface LearnerHistory {
   interviews: MockInterview[];
   feedback: LessonFeedback[];
   activePlans: StudyPlan[];
+  mistakes: Mistake[];
 }
 
 export class ProgressReport {
@@ -35,13 +37,19 @@ export class ProgressReport {
   get averageScoreThisWeek(): number | null { return LessonHistory.averageScore(this.lessonsThisWeek); }
   get weeklyGoalMinutes(): number { return this.profile.weeklyGoalMinutes; }
 
-  /** Days in a row with a finished lesson or interview. */
+  /** Days in a row with a finished lesson, interview or practice. */
   get streakDays(): number {
     return Calendar.streakLength([
       ...this.lessons.completed().map((lesson) => lesson.completedAt!),
       ...this.finishedInterviews.map((interview) => interview.createdAt),
+      ...this.history.mistakes.flatMap((mistake) => (mistake.lastReviewedAt ? [mistake.lastReviewedAt] : [])),
     ]);
   }
+
+  /** Notebook entries waiting for today's practice. */
+  get mistakesDue(): number { return this.history.mistakes.filter((mistake) => mistake.isDue()).length; }
+  /** Notebook entries not yet retired. */
+  get openMistakes(): number { return this.history.mistakes.filter((mistake) => !mistake.resolved).length; }
 
   /** Interview readiness: priority-weighted mastery of the main track. */
   get readiness(): number { return this.topics.onTrack("main").readiness(); }

@@ -337,3 +337,31 @@ returns void language sql security definer set search_path = public as $fn$
   update public.prep_test_bank set uses = uses + 1 where id = p_test;
 $fn$;
 revoke all on function public.prep_bump_uses(uuid, uuid) from public;
+
+-- ---------------------------------------------------------------------------------------------------------
+-- Mistakes notebook: what the learner got wrong (lesson tests, the grader's review, mock interviews, daily
+-- practice), brought back on a Leitner schedule (box 1-5) until answered right from the last box.
+create table if not exists public.prep_mistakes (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  topic_id uuid references public.prep_topics(id) on delete set null,
+  topic_title text not null default '',
+  source text not null check (source in ('test','review','interview','practice')),
+  kind text not null check (kind in ('choice','recall')),
+  prompt text not null check (char_length(prompt) <= 4000),
+  answer text not null default '' check (char_length(answer) <= 4000),
+  explanation text not null default '' check (char_length(explanation) <= 4000),
+  options jsonb,
+  correct_option int,
+  box int not null default 1 check (box between 1 and 5),
+  due_on date not null default current_date,
+  reviews int not null default 0,
+  last_result boolean,
+  resolved boolean not null default false,
+  last_reviewed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists prep_mistakes_due on public.prep_mistakes(user_id, resolved, due_on);
+alter table public.prep_mistakes enable row level security;
+drop policy if exists "own rows" on public.prep_mistakes;
+create policy "own rows" on public.prep_mistakes for all to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());

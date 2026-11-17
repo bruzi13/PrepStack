@@ -30,6 +30,7 @@ export default function Dashboard() {
       <NextStepCard report={report} />
       <WeekStats report={report} />
       <div className="grid2">
+        <DailyPracticeCard report={report} />
         <DueReviewsCard report={report} />
         <ModuleLevelsCard report={report} />
         <LearningStyleCard report={report} />
@@ -68,7 +69,7 @@ function NextStepCard({ report }: { report: ProgressReport }) {
           <div className="row"><Link className="btn primary big" to="/interviews">לסימולציית ראיון</Link><Link className="btn big" to="/plan">הוספת נושאים</Link></div>
         </>}
       </div>
-      <div className="next-side"><ScoreRing score={report.readiness} size={112} /><b>מוכנות לראיון</b><small>ממוצע השליטה בנושאי התוכנית, לפי חשיבות</small></div>
+      <div className="next-side"><ScoreRing score={report.readiness} size={112} /><b>מוכנות לראיון</b></div>
     </section>
   );
 }
@@ -111,15 +112,28 @@ function TopicLink({ topic, showKind }: { topic: Topic; showKind?: boolean }) {
   );
 }
 
+function DailyPracticeCard({ report }: { report: ProgressReport }) {
+  const due = report.mistakesDue;
+  return (
+    <section className="card" aria-labelledby="practice-heading">
+      <div className="row between card-head"><h3 id="practice-heading">תרגול יומי</h3>{due > 0 && <span className="pill warn">{due} מהמחברת</span>}</div>
+      <p className="muted">{report.openMistakes} טעויות פתוחות במחברת</p>
+      <div className="row">
+        <Link className="btn primary" to="/practice">התחלה</Link>
+        <Link className="link" to="/practice?tab=notebook">למחברת</Link>
+      </div>
+    </section>
+  );
+}
+
 function DueReviewsCard({ report }: { report: ProgressReport }) {
   const due = report.dueForReview;
   return (
     <section className="card" aria-labelledby="due-heading">
       <div className="row between card-head"><h3 id="due-heading">חזרות להיום</h3>{due.length > 0 && <span className="pill warn">↻ {due.length} ממתינות</span>}</div>
       {due.length === 0
-        ? <p className="muted">אין חזרות שממתינות. {report.nextToStudy ? "אפשר להתקדם לשיעור הבא." : ""}</p>
+        ? <p className="muted">אין חזרות להיום.</p>
         : <ul className="list">{due.slice(0, MAX_LISTED_REVIEWS).map((topic) => <li key={topic.id}><TopicLink topic={topic} /></li>)}</ul>}
-      {due.length > 0 && <small className="muted">חזרה במרווחים: נושא שנלמד חוזר לתרגול בדיוק כשמתחילים לשכוח אותו.</small>}
     </section>
   );
 }

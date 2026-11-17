@@ -17,12 +17,14 @@ import Settings from "@/features/settings/Settings";
 const LessonPage = lazy(() => import("@/features/lessons/LessonPage"));
 const InterviewRoom = lazy(() => import("@/features/interviews/InterviewRoom"));
 const AdminPage = lazy(() => import("@/features/admin/AdminPage"));
+const PracticePage = lazy(() => import("@/features/practice/PracticePage"));
 
 interface NavDestination { path: string; label: string; icon: IconName }
 
 const DESTINATIONS: NavDestination[] = [
   { path: "/", label: "היום", icon: "dashboard" },
   { path: "/plan", label: "תוכנית", icon: "map" },
+  { path: "/practice", label: "תרגול", icon: "check" },
   { path: "/interviews", label: "ראיונות", icon: "mic" },
   { path: "/jd", label: "התאמה למשרה", icon: "target" },
   { path: "/insights", label: "תובנות", icon: "flask" },
@@ -145,6 +147,7 @@ export default function App() {
             <Route path="/plan" element={<PlanTabs />} />
             <Route path="/ai" element={<Navigate to="/plan?track=ai" replace />} />
             <Route path="/lesson/:topicId" element={<LessonPage />} />
+            <Route path="/practice" element={<PracticePage />} />
             <Route path="/interviews" element={<Interviews />} />
             <Route path="/interview/:interviewId" element={<InterviewRoom />} />
             <Route path="/jd" element={<JobMatch />} />

@@ -5,6 +5,7 @@ import type { InterviewRepository } from "@/data/repositories/InterviewRepositor
 import type { LearnerProfile } from "@/domain/LearnerProfile";
 import { InterviewTranscript, type MockInterview } from "@/domain/MockInterview";
 import type { ChatMessage, InterviewWorkspace, Scorecard } from "@/domain/records";
+import type { PracticeService } from "@/services/PracticeService";
 
 /** A short interview takes this fraction of the full time. */
 const SHORT_INTERVIEW_DIVISOR = 2.5;
@@ -12,7 +13,7 @@ const SHORT_INTERVIEW_DIVISOR = 2.5;
 export interface InterviewSetup { level: string; lang: string; company: string; short: boolean }
 
 export class InterviewService {
-  constructor(private readonly ai: AiEngine, private readonly interviews: InterviewRepository) {}
+  constructor(private readonly ai: AiEngine, private readonly interviews: InterviewRepository, private readonly practice: PracticeService) {}
 
   static minutesFor(type: InterviewType, short: boolean): number {
     return short ? Math.round(type.minutes / SHORT_INTERVIEW_DIVISOR) : type.minutes;
@@ -60,6 +61,7 @@ export class InterviewService {
     await this.interviews.saveProgress(interview.id, transcript, workspace);
     const scorecard: Scorecard = await this.ai.runJob("debrief", { interviewId: interview.id });
     await this.interviews.saveScorecard(interview.id, scorecard);
+    await this.practice.captureFromInterview(interview, scorecard).catch((failure) => console.warn("mistakes not saved", failure));
     return interview.finished(scorecard);
   }
 }

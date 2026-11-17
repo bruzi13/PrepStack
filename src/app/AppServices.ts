@@ -11,6 +11,7 @@ import { DemoMaintainerBoardApi, ServerMaintainerBoardApi, type MaintainerBoardA
 import { FeedbackRepository } from "@/data/repositories/FeedbackRepository";
 import { InterviewRepository } from "@/data/repositories/InterviewRepository";
 import { LessonRepository } from "@/data/repositories/LessonRepository";
+import { MistakeRepository } from "@/data/repositories/MistakeRepository";
 import { MaintainerRepository } from "@/data/repositories/MaintainerRepository";
 import { PlanRepository } from "@/data/repositories/PlanRepository";
 import { ProfileRepository } from "@/data/repositories/ProfileRepository";
@@ -21,6 +22,7 @@ import { InterviewService } from "@/services/InterviewService";
 import { JobMatchService } from "@/services/JobMatchService";
 import { OnboardingService } from "@/services/OnboardingService";
 import { PlanService } from "@/services/PlanService";
+import { PracticeService } from "@/services/PracticeService";
 import { ProgressService } from "@/services/ProgressService";
 import { StudyService } from "@/services/StudyService";
 
@@ -35,6 +37,7 @@ export interface AppServices {
   study: StudyService;
   interviews: InterviewService;
   progress: ProgressService;
+  practice: PracticeService;
   onboarding: OnboardingService;
   errorReporter: ErrorReporter;
   codeRunner: CodeRunner;
@@ -67,7 +70,9 @@ export function createAppServices(isDemo: boolean): AppServices {
   const lessons = new LessonRepository(database);
   const feedback = new FeedbackRepository(database);
   const interviews = new InterviewRepository(database);
+  const mistakes = new MistakeRepository(database);
   const planService = new PlanService(ai, plans, topics);
+  const practice = new PracticeService(mistakes, lessons);
 
   return {
     isDemo,
@@ -76,9 +81,10 @@ export function createAppServices(isDemo: boolean): AppServices {
     maintainers: new MaintainerRepository(database, isDemo),
     maintainerBoard,
     plans: planService,
-    study: new StudyService(ai, topics, lessons, feedback),
-    interviews: new InterviewService(ai, interviews),
-    progress: new ProgressService(topics, lessons, interviews, feedback, plans),
+    study: new StudyService(ai, topics, lessons, feedback, practice),
+    interviews: new InterviewService(ai, interviews, practice),
+    progress: new ProgressService(topics, lessons, interviews, feedback, plans, mistakes),
+    practice,
     onboarding: new OnboardingService(ai, planService),
     errorReporter,
     codeRunner: new CodeRunner(),

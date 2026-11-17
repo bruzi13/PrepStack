@@ -402,3 +402,19 @@ td.num { text-align: end; }
 
 .side nav .nav-admin { margin-top: 10px; border-top: 1px solid rgba(255, 255, 255, .08); padding-top: 12px; border-radius: 0 0 10px 10px; }
 @media (max-width: 720px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .kpis .card { padding: 14px; } .kpis .big-num { font-size: 1.6rem; } .breakdown li { grid-template-columns: minmax(0, 6.5rem) 1fr auto; } }
+
+/* ---------- practice + notebook ---------- */
+.practice { max-width: 720px; }
+.practice-head { display: flex; align-items: center; gap: 14px; } .practice-head .bar { flex: 1; }
+.practice-card { display: flex; flex-direction: column; gap: 14px; }
+.practice-prompt { font-size: 1.08rem; font-weight: 500; } .practice-prompt p { margin: 0; }
+.practice-answer { border-inline-start: 3px solid var(--accent-line); padding-inline-start: 14px; }
+.practice-empty, .practice-done { max-width: 560px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.practice-done h2 { font: 600 2.6rem/1 var(--font-display); margin: 4px 0; }
+.notebook li { padding: 0; } .notebook details { padding: 10px 0; }
+.notebook summary { display: flex; justify-content: space-between; align-items: center; gap: 12px; cursor: pointer; list-style: none; font-weight: 400; }
+.notebook summary::-webkit-details-marker { display: none; }
+.notebook-prompt { flex: 1; min-width: 0; } .notebook-meta { display: inline-flex; align-items: center; gap: 10px; flex: none; }
+.notebook-body { padding: 10px 0 4px; display: flex; flex-direction: column; gap: 8px; }
+.box-meter { display: inline-flex; gap: 3px; } .box-meter i { width: 7px; height: 7px; border-radius: 50%; background: var(--line-strong); }
+.box-meter i.on { background: var(--good); }

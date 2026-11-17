@@ -2,6 +2,7 @@
 import type { FeedbackRepository } from "@/data/repositories/FeedbackRepository";
 import type { InterviewRepository } from "@/data/repositories/InterviewRepository";
 import type { LessonRepository } from "@/data/repositories/LessonRepository";
+import type { MistakeRepository } from "@/data/repositories/MistakeRepository";
 import type { PlanRepository } from "@/data/repositories/PlanRepository";
 import type { TopicRepository } from "@/data/repositories/TopicRepository";
 import { FormatSelector, type FormatInsights } from "@/domain/FormatSelector";
@@ -16,15 +17,18 @@ export class ProgressService {
     private readonly interviews: InterviewRepository,
     private readonly feedback: FeedbackRepository,
     private readonly plans: PlanRepository,
+    private readonly mistakes: MistakeRepository,
   ) {}
 
   async loadReport(profile: LearnerProfile): Promise<ProgressReport> {
     const userId = profile.userId;
-    const [topics, lessons, interviews, feedback, activePlans] = await Promise.all([
+    const [topics, lessons, interviews, feedback, activePlans, mistakes] = await Promise.all([
       this.topics.listForUser(userId), this.lessons.listForUser(userId), this.interviews.listForUser(userId),
       this.feedback.listForUser(userId), this.plans.listActive(userId),
+      // The notebook is optional on this screen: a missing table (schema not updated yet) must not break it.
+      this.mistakes.listForUser(userId).catch(() => []),
     ]);
-    return new ProgressReport({ topics, lessons, interviews, feedback, activePlans }, profile);
+    return new ProgressReport({ topics, lessons, interviews, feedback, activePlans, mistakes }, profile);
   }
 
   /** Format statistics plus the learner's lessons, newest first. */
