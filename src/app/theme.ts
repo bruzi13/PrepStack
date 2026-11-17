@@ -2,23 +2,30 @@
 // index.html applies it before the first paint so there is no flash of the wrong theme.
 import { useEffect, useState } from "react";
 
-export type ThemePref = "system" | "light" | "dark";
-const KEY = "prep-theme";
+export type ThemePreference = "system" | "light" | "dark";
+const STORAGE_KEY = "prep-theme";
 
-function read(): ThemePref {
-  try { const v = localStorage.getItem(KEY); return v === "light" || v === "dark" ? v : "system"; } catch { return "system"; }
+function readStoredPreference(): ThemePreference {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return stored === "light" || stored === "dark" ? stored : "system";
+  } catch {
+    return "system";
+  }
 }
 
-function apply(pref: ThemePref) {
+function applyToDocument(preference: ThemePreference) {
   const root = document.documentElement;
-  if (pref === "system") delete root.dataset.theme; else root.dataset.theme = pref;
+  if (preference === "system") delete root.dataset.theme; else root.dataset.theme = preference;
 }
 
 export function useTheme() {
-  const [pref, setPref] = useState<ThemePref>(read);
+  const [preference, setPreference] = useState<ThemePreference>(readStoredPreference);
   useEffect(() => {
-    apply(pref);
-    try { if (pref === "system") localStorage.removeItem(KEY); else localStorage.setItem(KEY, pref); } catch { /* private mode: still applied for this visit */ }
-  }, [pref]);
-  return [pref, setPref] as const;
+    applyToDocument(preference);
+    try {
+      if (preference === "system") localStorage.removeItem(STORAGE_KEY); else localStorage.setItem(STORAGE_KEY, preference);
+    } catch { /* private mode: still applied for this visit */ }
+  }, [preference]);
+  return [preference, setPreference] as const;
 }

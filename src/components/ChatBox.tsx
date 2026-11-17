@@ -1,48 +1,88 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import type { ChatMsg } from "@/types";
-import { Md } from "@/components/ui";
+import { START_MESSAGE } from "@/domain/MockInterview";
+import type { ChatMessage } from "@/domain/records";
+import { Markdown } from "@/components/ui";
 
-/** Chat transcript + composer. Supports dictation (speak your answer, as in a real interview) where the browser allows it. */
-export function ChatBox({ messages, streaming, busy, onSend, lang = "he", placeholder, other = "המראיין", footer }: {
-  messages: ChatMsg[]; streaming: string; busy: boolean; onSend: (text: string) => void;
-  lang?: string; placeholder?: string; other?: string; footer?: ReactNode;
+/** Sent when the interview clock runs out; never shown. */
+const TIME_UP_MESSAGE = "[TIME]";
+
+// The Web Speech API is not in TypeScript's DOM types yet; this is the part we use.
+interface SpeechRecognitionLike {
+  lang: string; continuous: boolean; interimResults: boolean;
+  onresult: (event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void;
+  onend: () => void; onerror: () => void;
+  start(): void; stop(): void;
+}
+type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
+const browserWindow = window as unknown as { SpeechRecognition?: SpeechRecognitionConstructor; webkitSpeechRecognition?: SpeechRecognitionConstructor };
+const SpeechRecognition = browserWindow.SpeechRecognition ?? browserWindow.webkitSpeechRecognition;
+
+function speakerLabel(message: ChatMessage, otherSpeaker: string): string {
+  if (message.tool) return message.role === "user" ? "אתם → עוזר AI" : "עוזר AI";
+  return message.role === "user" ? "אתם" : otherSpeaker;
+}
+
+/** Chat transcript and composer. Supports dictation (speak your answer, as in a real interview) where the browser allows it. */
+export function ChatBox({ messages, streaming, busy, onSend, lang = "he", placeholder, otherSpeaker = "המראיין", footer }: {
+  messages: ChatMessage[]; streaming: string; busy: boolean; onSend: (text: string) => void;
+  lang?: string; placeholder?: string; otherSpeaker?: string; footer?: ReactNode;
 }) {
-  const [text, setText] = useState("");
+  const [draft, setDraft] = useState("");
   const [listening, setListening] = useState(false);
-  const rec = useRef<any>(null);
-  const end = useRef<HTMLDivElement>(null);
-  useEffect(() => { end.current?.scrollIntoView({ block: "nearest" }); }, [messages.length, streaming]);
+  const recognition = useRef<SpeechRecognitionLike | null>(null);
+  const logEnd = useRef<HTMLDivElement>(null);
+  useEffect(() => { logEnd.current?.scrollIntoView({ block: "nearest" }); }, [messages.length, streaming]);
 
-  const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-  function dictate() {
-    if (listening) { rec.current?.stop(); return; }
-    const r = new SR(); rec.current = r;
-    r.lang = lang === "en" ? "en-US" : "he-IL"; r.continuous = true; r.interimResults = false;
-    r.onresult = (e: any) => { const said = e.results[e.results.length - 1][0].transcript; setText((t) => (t ? `${t} ` : "") + said.trim()); };
-    r.onend = () => setListening(false); r.onerror = () => setListening(false);
-    r.start(); setListening(true);
+  function toggleDictation() {
+    if (!SpeechRecognition) return;
+    if (listening) { recognition.current?.stop(); return; }
+    const session = new SpeechRecognition();
+    recognition.current = session;
+    session.lang = lang === "en" ? "en-US" : "he-IL";
+    session.continuous = true;
+    session.interimResults = false;
+    session.onresult = (event) => {
+      const spoken = event.results[event.results.length - 1][0].transcript.trim();
+      setDraft((current) => (current ? `${current} ` : "") + spoken);
+    };
+    session.onend = () => setListening(false);
+    session.onerror = () => setListening(false);
+    session.start();
+    setListening(true);
   }
-  function send() { const t = text.trim(); if (!t || busy) return; rec.current?.stop(); setText(""); onSend(t); }
+
+  function send() {
+    const text = draft.trim();
+    if (!text || busy) return;
+    recognition.current?.stop();
+    setDraft("");
+    onSend(text);
+  }
+
+  const visible = messages.filter((message) => !message.content.startsWith(START_MESSAGE) && message.content !== TIME_UP_MESSAGE);
 
   return (
     <div className="chat">
       <div className="chat-log">
-        {messages.filter((m) => !m.content.startsWith("[START]") && m.content !== "[TIME]").map((m, i) => (
-          <div key={i} className={`msg ${m.role} ${m.tool ? "tool" : ""}`}>
-            <span className="who">{m.tool ? (m.role === "user" ? "אתם → עוזר AI" : "עוזר AI") : m.role === "user" ? "אתם" : other}</span>
-            <Md>{m.content}</Md>
+        {visible.map((message, index) => (
+          <div key={index} className={`msg ${message.role} ${message.tool ? "tool" : ""}`}>
+            <span className="who">{speakerLabel(message, otherSpeaker)}</span>
+            <Markdown>{message.content}</Markdown>
           </div>
         ))}
-        {streaming && <div className="msg assistant"><span className="who">{other}</span><Md>{streaming}</Md></div>}
-        {busy && !streaming && <div className="msg assistant typing"><span className="who">{other}</span>כותב…</div>}
-        <div ref={end} />
+        {streaming && <div className="msg assistant"><span className="who">{otherSpeaker}</span><Markdown>{streaming}</Markdown></div>}
+        {busy && !streaming && <div className="msg assistant typing"><span className="who">{otherSpeaker}</span>כותב…</div>}
+        <div ref={logEnd} />
       </div>
       <div className="composer">
-        <textarea rows={3} value={text} placeholder={placeholder ?? "התשובה שלך…"} onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) send(); }} />
+        <textarea rows={3} value={draft} placeholder={placeholder ?? "התשובה שלך…"} onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) send(); }} />
         <div className="row between">
-          <div className="row">{SR && <button className={`btn small ${listening ? "rec" : ""}`} onClick={dictate} title="הכתבה בקול">{listening ? "⏹ עצירה" : "🎤 דברו"}</button>}{footer}</div>
-          <button className="btn primary" onClick={send} disabled={busy || !text.trim()}>שליחה</button>
+          <div className="row">
+            {SpeechRecognition && <button className={`btn small ${listening ? "rec" : ""}`} onClick={toggleDictation} title="הכתבה בקול">{listening ? "⏹ עצירה" : "🎤 דברו"}</button>}
+            {footer}
+          </div>
+          <button className="btn primary" onClick={send} disabled={busy || !draft.trim()}>שליחה</button>
         </div>
       </div>
     </div>

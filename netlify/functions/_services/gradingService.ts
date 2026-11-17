@@ -8,7 +8,7 @@ export interface GradingStore {
   lesson(userId: string, lessonId: string): Promise<{ id: string; topic_id: string; status: string; content: Json } | null>;
   topicTitle(topicId: string): Promise<string>;
   learner(userId: string): Promise<Learner>;
-  saveResult(userId: string, lesson: { id: string; topic_id: string }, r: { kind: string; submission: Json; score: number; review: Json | null; minutes: number }): Promise<void>;
+  saveResult(userId: string, lesson: { id: string; topic_id: string }, result: { kind: string; submission: Json; score: number; review: Json | null; minutes: number }): Promise<void>;
 }
 export interface Grader { grade(input: Json): Promise<Json> }
 
@@ -24,9 +24,9 @@ export function testFor(test: Json, kind: string): Json {
 
 /** Multiple-choice percentage against the stored answer key, never a number the browser sent. */
 export function quizPercent(quiz: { answer: number }[], answers: unknown): number {
-  const a = Array.isArray(answers) ? answers : [];
+  const given = Array.isArray(answers) ? answers : [];
   if (!quiz.length) return 0;
-  return (quiz.filter((q, i) => a[i] === q.answer).length / quiz.length) * 100;
+  return (quiz.filter((question, index) => given[index] === question.answer).length / quiz.length) * 100;
 }
 
 export class GradingService {
@@ -46,14 +46,14 @@ export class GradingService {
 
     let score: number, review: Json | null = null, extra: string | undefined;
     if (args.kind === "quiz") {
-      const mcq = quizPercent(test.quiz ?? [], args.submission.answers);
-      const open = typeof args.submission.open === "string" ? args.submission.open.trim() : "";
-      if (test.open_question && open) {
+      const multipleChoicePercent = quizPercent(test.quiz ?? [], args.submission.answers);
+      const openAnswer = typeof args.submission.open === "string" ? args.submission.open.trim() : "";
+      if (test.open_question && openAnswer) {
         review = await grade();
-        score = 0.7 * mcq + 0.3 * Number(review.score);
-        extra = `שאלות אמריקאיות: ${Math.round(mcq)} · שאלה פתוחה: ${review.score}`;
+        score = 0.7 * multipleChoicePercent + 0.3 * Number(review.score);
+        extra = `שאלות אמריקאיות: ${Math.round(multipleChoicePercent)} · שאלה פתוחה: ${review.score}`;
       } else {
-        score = test.open_question ? 0.7 * mcq : mcq;
+        score = test.open_question ? 0.7 * multipleChoicePercent : multipleChoicePercent;
         if (test.open_question) extra = "לא ענית על השאלה הפתוחה (30% מהציון).";
       }
     } else {

@@ -1,143 +1,146 @@
-// A lesson from start to finish: pick the format for this learner, generate the lesson, teach it,
-// test it, grade the test, collect feedback, and update what we know about the learner.
-import { useCallback, useEffect, useRef, useState } from "react";
+// A lesson from start to finish: prepare it in the format that suits this learner, teach it, test it, show the
+// grade, collect feedback.
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { FORMATS, formatById, KIND_LABEL, TEST_LABEL, type FormatId } from "@shared/catalog";
-import { useMe } from "@/app/AppContext";
-import { chooseFormat, observations, type Choice } from "@/learning/adapt";
-import { chat, formatPriors, runJob } from "@/services/ai";
-import { afterTest } from "@/learning/srs";
-import { db } from "@/services/store";
-import type { Block, Canvas, ChatMsg, Feedback, Lesson, LessonContent, Review, Topic } from "@/types";
-import { ArchCanvas, emptyCanvas } from "@/components/ArchCanvas";
-import { ChatBox } from "@/components/ChatBox";
-import { CodeLab, type CodeSubmission } from "@/components/CodeLab";
-import { Busy, Diagram, ErrorBox, LessonSteps, Md, ReviewView, StepWait } from "@/components/ui";
+import { FORMATS, TEST_LABEL, type FormatId } from "@shared/catalog";
+import { useServices } from "@/app/AppContext";
+import type { TestKind } from "@/ai/AiEngine";
+import type { Lesson } from "@/domain/Lesson";
+import type { TestOutcome } from "@/domain/records";
+import type { Topic } from "@/domain/Topic";
+import type { LessonRequest } from "@/services/StudyService";
+import { CodeLab } from "@/components/CodeLab";
+import { ErrorMessage, GradingReviewView, LessonStageIndicator, Loading, TimedProgressSteps } from "@/components/ui";
+import { LessonBlockView } from "./LessonBlocks";
+import { LessonFeedbackForm } from "./LessonFeedbackForm";
+import { ArchitectureTestView, PracticalTestView, QuizTest } from "./LessonTests";
+import { TutorChat } from "./TutorChat";
 
-const WANTED = ["יותר דוגמאות", "יותר תרשימים", "יותר תרגול", "יותר עומק", "קצר יותר", "קצב איטי יותר"];
+const PREPARATION_STEPS = ["בוחרים את דרך ההוראה שמתאימה לכם", "כותבים את השיעור לרמה ולסטאק שלכם", "מכינים דוגמאות ותרגילים", "בונים את המבחן המסכם"];
 
-const GEN_STEPS = ["בוחרים את דרך ההוראה שמתאימה לכם", "כותבים את השיעור לרמה ולסטאק שלכם", "מכינים דוגמאות ותרגילים", "בונים את המבחן המסכם"];
+type Stage = "loading" | "preparing" | "learning" | "testing" | "grading" | "result";
+
+/** Which of the three stages the indicator shows. */
+const STAGE_INDEX: Record<Stage, 0 | 1 | 2> = { loading: 0, preparing: 0, learning: 0, testing: 1, grading: 1, result: 2 };
 
 export default function LessonPage() {
   const { topicId } = useParams();
-  const { user } = useMe();
+  const { study } = useServices();
   const [topic, setTopic] = useState<Topic | null>(null);
   const [lesson, setLesson] = useState<Lesson | null>(null);
-  const [stage, setStage] = useState<"loading" | "generating" | "learn" | "test" | "grading" | "result">("loading");
-  const [err, setErr] = useState("");
-  const [result, setResult] = useState<{ score: number; review: Review | null; extra?: string } | null>(null);
+  const [stage, setStage] = useState<Stage>("loading");
+  const [error, setError] = useState("");
+  const [outcome, setOutcome] = useState<TestOutcome | null>(null);
   const [nextTopic, setNextTopic] = useState<Topic | null>(null);
-  const started = useRef(Date.now());
   const [isReview, setIsReview] = useState(false);
+  const lessonStartedAt = useRef(Date.now());
 
-  const generate = useCallback(async (t: Topic, force?: FormatId, exclude: FormatId[] = []) => {
-    setStage("generating"); setErr("");
-    try {
-      const eq = { user_id: user.id };
-      const [lessons, feedback, priors] = await Promise.all([
-        db.list<Lesson>("prep_lessons", { eq }), db.list<Feedback>("prep_feedback", { eq }), formatPriors().catch(() => []),
-      ]);
-      const c = chooseFormat(observations(lessons, feedback), t.kind, priors, exclude);
-      const format = force ?? c.format;
-      const picked: Choice = force ? { ...c, format, reason: "בחרתם בפורמט הזה בעצמכם." } : c;
-      // The server loads the topic, profile and weak points itself, and saves the lesson.
-      const { lesson: row } = await runJob<{ lesson: Lesson; source: string }>("lesson", {
-        topicId: t.id, format, manual: !!force,
-        choice: { reason: picked.reason, manual: !!force, table: picked.table.map((r) => ({ format: r.format, n: r.n, mean: +r.mean.toFixed(3), sampled: +r.sampled.toFixed(3) })) },
-      }, user.id);
-      setLesson(row); started.current = Date.now(); setStage("learn");
-    } catch (e) { setErr((e as Error).message); }
-  }, [user.id]);
+  function beginLearning(ready: Lesson) {
+    setLesson(ready);
+    lessonStartedAt.current = Date.now();
+    setStage("learning");
+  }
 
+  async function prepare(work: () => Promise<Lesson>) {
+    setStage("preparing"); setError("");
+    try { beginLearning(await work()); } catch (failure) { setError((failure as Error).message); }
+  }
+
+  const startLesson = (forTopic: Topic, request?: LessonRequest) => prepare(() => study.startLesson(forTopic, request));
+
+  // Open the topic: continue an unfinished lesson if there is one, otherwise prepare a new one.
   useEffect(() => {
-    let alive = true;
+    let mounted = true;
     (async () => {
-      setStage("loading"); setResult(null); setLesson(null);
-      const [t] = await db.list<Topic>("prep_topics", { eq: { id: topicId } });
-      if (!alive) return;
-      if (!t) { setErr("הנושא לא נמצא."); return; }
-      setTopic(t); setIsReview(t.reviews > 0);
-      const ready = (await db.list<Lesson>("prep_lessons", { eq: { topic_id: t.id, status: "ready" }, order: "created_at", asc: false, limit: 1 }))[0];
-      if (!alive) return;
-      if (ready) { setLesson(ready); started.current = Date.now(); setStage("learn"); }
-      else generate(t);
-    })().catch((e) => alive && setErr(e.message));
-    return () => { alive = false; };
+      setStage("loading"); setOutcome(null); setLesson(null);
+      const found = await study.findTopic(topicId ?? "");
+      if (!mounted) return;
+      if (!found) { setError("הנושא לא נמצא."); return; }
+      setTopic(found); setIsReview(found.isStudied);
+      const unfinished = await study.findUnfinishedLesson(found);
+      if (!mounted) return;
+      if (unfinished) beginLearning(unfinished); else void startLesson(found);
+    })().catch((failure: Error) => mounted && setError(failure.message));
+    return () => { mounted = false; };
+    // Only a new topic id restarts the flow.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topicId]);
 
-  async function switchFormat(f?: FormatId) {
-    if (!topic || !lesson) return;
-    await db.remove("prep_lessons", { id: lesson.id });
-    generate(topic, f, f ? [] : [lesson.format]);
+  function switchFormat(chosenFormat?: FormatId) {
+    if (topic && lesson) void prepare(() => study.switchFormat(topic, lesson, chosenFormat));
   }
 
-  /** Submit the test. The server grades it and saves the score; here we update the topic's review schedule. */
-  async function submit(kind: "quiz" | "code" | "architecture" | "practical", submission: Record<string, unknown>) {
+  async function submitTest(kind: TestKind, submission: Record<string, unknown>) {
     if (!topic || !lesson) return;
-    setStage("grading"); setErr("");
+    setStage("grading"); setError("");
     try {
-      const minutes = Math.min(120, (Date.now() - started.current) / 60000);
-      const r = await runJob<{ score: number; review: Review | null; extra?: string }>("complete", { lessonId: lesson.id, kind, submission, minutes }, user.id);
-      const patch = afterTest(topic, r.score);
-      await db.update("prep_topics", topic.id, patch);
-      setTopic({ ...topic, ...patch } as Topic);
-      const rest = await db.list<Topic>("prep_topics", { eq: { plan_id: topic.plan_id }, order: "ord" });
-      setNextTopic(rest.find((t) => t.reviews === 0 && t.id !== topic.id) ?? null);
-      setResult(r); setStage("result");
-    } catch (e) { setErr((e as Error).message); setStage("test"); }
+      const result = await study.submitTest(topic, lesson, kind, submission, lessonStartedAt.current);
+      setTopic(result.topic);
+      setNextTopic(result.nextTopic);
+      setOutcome(result.outcome);
+      setStage("result");
+    } catch (failure) {
+      setError((failure as Error).message);
+      setStage("testing");
+    }
   }
 
-  if (err && stage !== "test") return <div className="page"><ErrorBox msg={err} retry={topic ? () => generate(topic) : undefined} /><Link to="/plan" className="link">חזרה לתוכנית</Link></div>;
-  if (stage === "loading" || !topic) return <Busy label="טוען…" />;
-  if (stage === "generating" || !lesson) return <div className="page lesson"><StepWait title={`מכינים את השיעור: ${topic.title}`} steps={GEN_STEPS} /></div>;
+  function startTest() { setStage("testing"); window.scrollTo(0, 0); }
 
-  const c = lesson.content, fmt = formatById(lesson.format), test = c.test;
+  if (error && stage !== "testing") {
+    return (
+      <div className="page">
+        <ErrorMessage message={error} onRetry={topic ? () => void startLesson(topic) : undefined} />
+        <Link to="/plan" className="link">חזרה לתוכנית</Link>
+      </div>
+    );
+  }
+  if (stage === "loading" || !topic) return <Loading label="טוען…" />;
+  if (stage === "preparing" || !lesson) {
+    return <div className="page lesson"><TimedProgressSteps title={`מכינים את השיעור: ${topic.title}`} steps={PREPARATION_STEPS} /></div>;
+  }
 
+  const content = lesson.content, test = lesson.test;
   return (
     <div className="page lesson">
-      <Link to={topic.track === "ai" ? "/plan?track=ai" : "/plan"} className="link">→ לתוכנית</Link>
+      <Link to={topic.planPath} className="link">→ לתוכנית</Link>
       <div className="page-head">
-        <h1>{c.title || topic.title}</h1>
-        <p className="muted">{topic.module} · {KIND_LABEL[topic.kind]}{isReview ? " · שיעור חזרה" : ""}</p>
+        <h1>{content.title || topic.title}</h1>
+        <p className="muted">{topic.moduleName} · {topic.kindLabel}{isReview ? " · שיעור חזרה" : ""}</p>
       </div>
-      <LessonSteps at={stage === "learn" ? 0 : stage === "result" ? 2 : 1} />
+      <LessonStageIndicator stage={STAGE_INDEX[stage]} />
 
-      {stage === "learn" && <>
-        <div className="format-bar">
-          <span className="muted">{fmt.name}</span>
-          <details className="switch"><summary>החלפת פורמט</summary>
-            <div className="chips">
-              <button className="chip" onClick={() => switchFormat()}>אקראי</button>
-              {FORMATS.filter((f) => f.id !== lesson.format).map((f) => <button key={f.id} className="chip" title={f.blurb} onClick={() => switchFormat(f.id)}>{f.name}</button>)}
-            </div>
-          </details>
-        </div>
-        {lesson.personal?.note && <aside className="card personal-note" aria-label="הערה אישית"><b>במיוחד בשבילך</b><p>{lesson.personal.note}</p></aside>}
-        <p className="intro">{c.intro}</p>
-        {c.blocks.map((b, i) => <BlockView key={i} b={b} />)}
-        {c.takeaways.length > 0 && <div className="card takeaways"><h3>סיכום</h3><ul>{c.takeaways.map((t, i) => <li key={i}>{t}</li>)}</ul>
-          {c.interview_tips?.length > 0 && <><h4>בראיון</h4><ul>{c.interview_tips.map((t, i) => <li key={i}>{t}</li>)}</ul></>}</div>}
-        <Tutor topic={topic.title} />
-        <div className="card cta"><b>{TEST_LABEL[test.type]}</b><button className="btn primary big" onClick={() => { setStage("test"); window.scrollTo(0, 0); }}>התחלה</button></div>
+      {stage === "learning" && <>
+        <FormatSwitcher current={lesson} onSwitch={switchFormat} />
+        {lesson.personalNote?.note && <aside className="card personal-note" aria-label="הערה אישית"><b>במיוחד בשבילך</b><p>{lesson.personalNote.note}</p></aside>}
+        <p className="intro">{content.intro}</p>
+        {content.blocks.map((block, index) => <LessonBlockView key={index} block={block} />)}
+        {content.takeaways.length > 0 && <div className="card takeaways">
+          <h3>סיכום</h3><ul>{content.takeaways.map((takeaway, index) => <li key={index}>{takeaway}</li>)}</ul>
+          {content.interview_tips?.length > 0 && <><h4>בראיון</h4><ul>{content.interview_tips.map((tip, index) => <li key={index}>{tip}</li>)}</ul></>}
+        </div>}
+        <TutorChat topicTitle={topic.title} />
+        <div className="card cta"><b>{TEST_LABEL[test.type]}</b><button className="btn primary big" onClick={startTest}>התחלה</button></div>
       </>}
 
-      {(stage === "test" || stage === "grading") && <>
-        <ErrorBox msg={err} />
-        {stage === "grading" && <Busy label="בודק…" />}
+      {(stage === "testing" || stage === "grading") && <>
+        <ErrorMessage message={error} />
+        {stage === "grading" && <Loading label="בודק…" />}
         <div style={{ display: stage === "grading" ? "none" : undefined }}>
-          <button className="link" onClick={() => setStage("learn")}>→ לשיעור</button>
-          {test.type === "quiz" && <QuizTest test={test} onDone={(answers, open) => submit("quiz", { answers, open })} />}
-          {test.type === "code" && <CodeLab test={test.code} busy={false} onSubmit={(s: CodeSubmission) => submit("code", s as unknown as Record<string, unknown>)} />}
-          {test.type === "architecture" && <ArchTest test={test.architecture} onSubmit={(canvas) => submit("architecture", canvas as unknown as Record<string, unknown>)} />}
-          {test.type === "practical" && <PracticalTest test={test.practical} onSubmit={(answer) => submit("practical", { answer })} />}
+          <button className="link" onClick={() => setStage("learning")}>→ לשיעור</button>
+          {test.type === "quiz" && <QuizTest test={test} onSubmit={(answers, openAnswer) => submitTest("quiz", { answers, open: openAnswer })} />}
+          {test.type === "code" && <CodeLab test={test.code} busy={false} onSubmit={(submission) => submitTest("code", { ...submission })} />}
+          {test.type === "architecture" && <ArchitectureTestView test={test.architecture} onSubmit={(canvas) => submitTest("architecture", { ...canvas })} />}
+          {test.type === "practical" && <PracticalTestView test={test.practical} onSubmit={(answer) => submitTest("practical", { answer })} />}
         </div>
       </>}
 
-      {stage === "result" && result && <>
-        <div className="card"><ReviewView review={result.review} score={result.score} extra={result.extra && <small className="muted">{result.extra}</small>} />
-          <p className="muted">שליטה: {Math.round(topic.mastery)}{topic.next_review ? ` · חזרה הבאה ${topic.next_review}` : ""}</p></div>
-        <FeedbackForm lesson={lesson} />
+      {stage === "result" && outcome && <>
+        <div className="card">
+          <GradingReviewView review={outcome.review} score={outcome.score} extra={outcome.extra && <small className="muted">{outcome.extra}</small>} />
+          <p className="muted">שליטה: {Math.round(topic.mastery)}{topic.nextReviewDate ? ` · חזרה הבאה ${topic.nextReviewDate}` : ""}</p>
+        </div>
+        <LessonFeedbackForm lesson={lesson} />
         <div className="row">
           {nextTopic && <Link className="btn primary" to={`/lesson/${nextTopic.id}`}>לשיעור הבא: {nextTopic.title}</Link>}
           <Link className="btn" to="/">ללוח הבקרה</Link>
@@ -147,131 +150,18 @@ export default function LessonPage() {
   );
 }
 
-function BlockView({ b }: { b: Block }) {
-  if (b.type === "check") return <div className="card check"><Check q={b} title={b.title || "בדיקת הבנה"} /></div>;
-  if (b.type === "scenario") return <Scenario b={b} />;
-  if (b.type === "flashcards") return <div className="card"><h3>{b.title || "כרטיסיות"}</h3><div className="cards">{b.cards.map((c, i) => <Flash key={i} q={c.q} a={c.a} />)}</div></div>;
+function FormatSwitcher({ current, onSwitch }: { current: Lesson; onSwitch: (format?: FormatId) => void }) {
   return (
-    <div className={`card block ${b.type}`}>
-      {b.title && <h3>{b.title}</h3>}
-      {b.type === "diagram" && b.mermaid && <Diagram code={b.mermaid} />}
-      <Md>{b.md}</Md>
-    </div>
-  );
-}
-
-function Check({ q, title }: { q: { question: string; options: string[]; answer: number; explain: string }; title?: string }) {
-  const [pick, setPick] = useState<number | null>(null);
-  return <>
-    {title && <small className="muted">{title}</small>}
-    <p className="q-title">{q.question}</p>
-    <div className="options">{q.options.map((o, i) => (
-      <button key={i} disabled={pick != null} className={`option ${pick != null && i === q.answer ? "right" : ""} ${pick === i && i !== q.answer ? "wrong" : ""}`} onClick={() => setPick(i)}>{o}</button>
-    ))}</div>
-    {pick != null && <div className={`explain ${pick === q.answer ? "good" : "bad"}`}>{pick === q.answer ? "נכון. " : "לא בדיוק. "}{q.explain}</div>}
-  </>;
-}
-
-function Scenario({ b }: { b: Block }) {
-  const [step, setStep] = useState(0);
-  const [pick, setPick] = useState<number | null>(null);
-  const s = b.steps[step];
-  if (!s) return null;
-  const chosen = pick != null ? s.choices[pick] : null;
-  return (
-    <div className="card scenario">
-      <h3>{b.title || "תרחיש"} <small className="muted">שלב {step + 1}/{b.steps.length}</small></h3>
-      <p>{s.situation}</p>
-      <div className="options">{s.choices.map((c, i) => <button key={i} disabled={pick != null} className={`option ${pick === i ? (c.good ? "right" : "wrong") : ""}`} onClick={() => setPick(i)}>{c.label}</button>)}</div>
-      {chosen && <div className={`explain ${chosen.good ? "good" : "bad"}`}>{chosen.outcome}
-        <div className="row">{!chosen.good && <button className="btn small" onClick={() => setPick(null)}>נסו בחירה אחרת</button>}
-          {step + 1 < b.steps.length && <button className="btn small primary" onClick={() => { setStep(step + 1); setPick(null); }}>המשך</button>}</div></div>}
-    </div>
-  );
-}
-
-function Flash({ q, a }: { q: string; a: string }) {
-  const [open, setOpen] = useState(false);
-  return <button className={`flash ${open ? "open" : ""}`} onClick={() => setOpen(!open)}><b>{q}</b>{open ? <span>{a}</span> : <small className="muted">הצגת תשובה</small>}</button>;
-}
-
-function Tutor({ topic }: { topic: string }) {
-  const [msgs, setMsgs] = useState<ChatMsg[]>([]);
-  const [streaming, setStreaming] = useState("");
-  const [busy, setBusy] = useState(false);
-  async function send(text: string) {
-    const next = [...msgs, { role: "user" as const, content: text }];
-    setMsgs(next); setBusy(true);
-    try { const reply = await chat({ mode: "tutor", topic: { title: topic }, messages: next }, setStreaming); setMsgs([...next, { role: "assistant", content: reply }]); }
-    catch (e) { setMsgs([...next, { role: "assistant", content: (e as Error).message }]); }
-    setStreaming(""); setBusy(false);
-  }
-  return <details className="card tutor"><summary>שאלה על השיעור</summary><ChatBox messages={msgs} streaming={streaming} busy={busy} onSend={send} other="המורה" placeholder="השאלה שלך…" /></details>;
-}
-
-function QuizTest({ test, onDone }: { test: LessonContent["test"]; onDone: (answers: number[], open: string, mcqPercent: number) => void }) {
-  const [answers, setAnswers] = useState<number[]>(() => test.quiz.map(() => -1));
-  const [open, setOpen] = useState("");
-  const all = answers.every((a) => a >= 0);
-  return (
-    <div>
-      {test.quiz.map((q, i) => (
-        <div key={i} className="card"><p className="q-title">{i + 1}. {q.question}</p>
-          <div className="options">{q.options.map((o, j) => <button key={j} className={`option ${answers[i] === j ? "on" : ""}`} onClick={() => setAnswers(answers.map((a, k) => (k === i ? j : a)))}>{o}</button>)}</div></div>
-      ))}
-      {test.open_question && <div className="card"><p className="q-title">שאלה פתוחה: {test.open_question}</p>
-        <textarea dir="auto" rows={6} value={open} onChange={(e) => setOpen(e.target.value)} placeholder="התשובה שלך…" /></div>}
-      <button className="btn primary big" disabled={!all} onClick={() => onDone(answers, open, (answers.filter((a, i) => a === test.quiz[i].answer).length / Math.max(1, test.quiz.length)) * 100)}>הגשה</button>
-    </div>
-  );
-}
-
-function ArchTest({ test, onSubmit }: { test: LessonContent["test"]["architecture"]; onSubmit: (c: Canvas) => void }) {
-  const canvas = useRef<Canvas>(emptyCanvas());
-  const [count, setCount] = useState(0);
-  return (
-    <div>
-      <div className="card"><h3>{test.prompt}</h3>
-        <div className="grid2"><div><h4>דרישות</h4><ul>{test.requirements.map((r, i) => <li key={i}>{r}</li>)}</ul></div>
-          {test.constraints.length > 0 && <div><h4>אילוצים</h4><ul>{test.constraints.map((r, i) => <li key={i}>{r}</li>)}</ul></div>}</div>
-        <small className="muted">קריטריונים: {test.rubric.map((r) => r.dimension).join(" · ")}</small></div>
-      <div className="card"><ArchCanvas value={canvas.current} onChange={(c) => { canvas.current = c; setCount(c.nodes.length); }} /></div>
-      <button className="btn primary big" disabled={count < 2} onClick={() => onSubmit(canvas.current)}>הגשת התכנון לביקורת</button>
-    </div>
-  );
-}
-
-function PracticalTest({ test, onSubmit }: { test: LessonContent["test"]["practical"]; onSubmit: (answer: string) => void }) {
-  const [answer, setAnswer] = useState("");
-  return (
-    <div>
-      <div className="card"><Md>{test.task}</Md><p><b>מה להגיש:</b> {test.deliverable}</p><small className="muted">קריטריונים: {test.rubric.join(" · ")}</small></div>
-      <div className="card"><textarea dir="auto" className="mono" rows={14} value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="התשובה שלך…" /></div>
-      <button className="btn primary big" disabled={answer.trim().length < 20} onClick={() => onSubmit(answer)}>הגשה לביקורת</button>
-    </div>
-  );
-}
-
-/** What the learner thought of the lesson. Compared later with how they actually scored. */
-function FeedbackForm({ lesson }: { lesson: Lesson }) {
-  const { user } = useMe();
-  const [f, setF] = useState({ rating: 0, difficulty: 0, wanted: [] as string[], comment: "", contentError: false });
-  const [sent, setSent] = useState(false);
-  if (sent) return <div className="notice">המשוב נשמר.</div>;
-  return (
-    <div className="card feedback">
-      <h3>דירוג השיעור</h3>
-      <div className="stars" role="radiogroup" aria-label="דירוג">{[1, 2, 3, 4, 5].map((n) => <button key={n} className={n <= f.rating ? "on" : ""} aria-label={`${n} כוכבים`} onClick={() => setF({ ...f, rating: n })}>★</button>)}</div>
-      <p className="q-label">רמת הקושי</p>
-      <div className="seg">{[[1, "קל מדי"], [3, "בדיוק"], [5, "קשה מדי"]].map(([v, t]) => <button key={v} className={f.difficulty === v ? "on" : ""} onClick={() => setF({ ...f, difficulty: v as number })}>{t}</button>)}</div>
-      <p className="q-label">בפעם הבאה</p>
-      <div className="chips">{WANTED.map((w) => <button key={w} className={`chip ${f.wanted.includes(w) ? "on" : ""}`} onClick={() => setF({ ...f, wanted: f.wanted.includes(w) ? f.wanted.filter((x) => x !== w) : [...f.wanted, w] })}>{w}</button>)}</div>
-      <label className="check-row"><input type="checkbox" checked={f.contentError} onChange={(e) => setF({ ...f, contentError: e.target.checked })} />מצאתי טעות בתוכן השיעור</label>
-      <textarea dir="auto" rows={2} maxLength={2000} value={f.comment} onChange={(e) => setF({ ...f, comment: e.target.value })} placeholder={f.contentError ? "מה הטעות? (עוזר לנו לתקן)" : "הערה (לא חובה)"} />
-      <button className="btn primary" disabled={!f.rating} onClick={async () => {
-        await db.insert("prep_feedback", { user_id: user.id, lesson_id: lesson.id, topic_kind: lesson.topic_kind, format: lesson.format, rating: f.rating, difficulty: f.difficulty || null, wanted: f.wanted.join(", "), comment: f.comment, content_error: f.contentError });
-        setSent(true);
-      }}>שליחה</button>
+    <div className="format-bar">
+      <span className="muted">{current.formatName}</span>
+      <details className="switch"><summary>החלפת פורמט</summary>
+        <div className="chips">
+          <button className="chip" onClick={() => onSwitch()}>אקראי</button>
+          {FORMATS.filter((format) => format.id !== current.format).map((format) => (
+            <button key={format.id} className="chip" title={format.blurb} onClick={() => onSwitch(format.id)}>{format.name}</button>
+          ))}
+        </div>
+      </details>
     </div>
   );
 }

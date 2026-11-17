@@ -2,7 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { askJson, CHAT_MODEL, research, S } from "./claude";
 import { AI_TRACK_SPINE, formatById, interviewById, TEST_FOR_KIND, type TopicKind } from "../../../shared/catalog";
 
-type In = Record<string, any>;
+/** Loosely typed JSON (profiles, model output); validated with zod where it is stored. */
+type LooseJson = Record<string, any>;
 type Json = Record<string, unknown>;
 
 const BASE = `You are the learning engine of PrepStack, an interview-prep and upskilling site for people in tech in Israel.
@@ -14,10 +15,10 @@ const KINDS = ["concept", "coding", "design", "practical", "behavioral"] as cons
 const KIND_GUIDE = `Topic kinds: "concept" = understanding (tested by a quiz); "coding" = an algorithmic or implementation skill (tested by writing a function that runs against tests); "design" = architecture and system design (tested on an interactive architecture canvas); "practical" = hands-on craft such as writing a query, a config, a prompt, a tool definition, a review (tested by a written practical task); "behavioral" = interview stories and communication (tested by a written answer).`;
 
 const today = () => new Date().toISOString().slice(0, 10);
-const profileText = (p: In = {}) => JSON.stringify(p, null, 1);
+const profileText = (profile: LooseJson = {}) => JSON.stringify(profile, null, 1);
 
 /* ---------------- diagnostic: questions for the adaptive placement quiz ---------------- */
-export async function diagnostic(input: In) {
+export async function diagnostic(input: LooseJson) {
   return askJson({
     system: BASE,
     effort: "low",
@@ -50,10 +51,10 @@ const ROLE_MAP_SCHEMA = S.obj({
 });
 
 export async function buildRoleMap(db: SupabaseClient, roleKey: string, roleTitle: string, level: string, track: string) {
-  const q = track === "ai"
+  const researchQuestion = track === "ai"
     ? `Today is ${today()}. Research what a software engineer needs to learn, right now, to go from basic use of AI tools to building with AI agents: prompting and context engineering, tool use, RAG, agent loops, MCP, evals, coding agents, multi-agent orchestration, production concerns (cost, latency, security, prompt injection). Find what changed in the last 12 months and what is now considered standard practice, and what separates engineers who are exceptional at building with AI from those who only use it. Note where sources disagree.`
     : `Today is ${today()}. Research what a ${level} ${roleTitle} needs to know, right now, to pass interviews and to do the job well. Look for current roadmaps, analyses of hiring requirements, and reports on how interviews for this role are run today (including AI-assisted rounds). Cover: fundamentals that are always asked, the depth areas (for example for backend: distributed systems, scale, data stores, reliability), the tools and technologies currently in demand, what changed in the last 12 months, and what separates people who are exceptional in this role at this level from those who are merely competent (the skills, judgment and habits that senior engineers and hiring managers point to). Note where sources disagree.`;
-  const r = await research(`${BASE}\nYou are researching the current job market. Search the web, read several independent sources, and write detailed notes in English with the concrete skills and topics you found.`, q);
+  const findings = await research(`${BASE}\nYou are researching the current job market. Search the web, read several independent sources, and write detailed notes in English with the concrete skills and topics you found.`, researchQuestion);
   const data = await askJson({
     system: BASE,
     effort: "medium",
@@ -63,34 +64,34 @@ ${track === "ai" ? `The track must cover this spine, in this order, updated with
 Role: ${roleTitle} (${level})
 
 Research notes:
-${r.notes}`,
+${findings.notes}`,
     schema: ROLE_MAP_SCHEMA,
   });
-  await db.from("prep_role_maps").upsert({ role_key: roleKey, role_title: roleTitle, data, sources: r.sources, refreshed_at: new Date().toISOString() });
-  return { data, sources: r.sources, refreshed_at: new Date().toISOString() };
+  await db.from("prep_role_maps").upsert({ role_key: roleKey, role_title: roleTitle, data, sources: findings.sources, refreshed_at: new Date().toISOString() });
+  return { data, sources: findings.sources, refreshed_at: new Date().toISOString() };
 }
 
 async function roleMap(db: SupabaseClient, roleKey: string, roleTitle: string, level: string, track: string) {
   const { data: row } = await db.from("prep_role_maps").select("*").eq("role_key", roleKey).maybeSingle();
-  const fresh = row && Date.now() - new Date(row.refreshed_at).getTime() < 14 * 86400_000;
-  if (fresh) return { data: row.data, sources: row.sources, refreshed_at: row.refreshed_at };
+  const isFresh = row && Date.now() - new Date(row.refreshed_at).getTime() < 14 * 86400_000;
+  if (isFresh) return { data: row.data, sources: row.sources, refreshed_at: row.refreshed_at };
   try { return await buildRoleMap(db, roleKey, roleTitle, level, track); }
-  catch (e) { if (row) return { data: row.data, sources: row.sources, refreshed_at: row.refreshed_at }; throw e; }
+  catch (failure) { if (row) return { data: row.data, sources: row.sources, refreshed_at: row.refreshed_at }; throw failure; }
 }
 
 /* ---------------- plan: the personal curriculum ---------------- */
-export async function plan(input: In, db: SupabaseClient) {
-  const p = input.profile ?? {};
+export async function plan(input: LooseJson, db: SupabaseClient) {
+  const profile: LooseJson = input.profile ?? {};
   const track = input.track === "ai" ? "ai" : "main";
-  const roleTitle = track === "ai" ? "AI & Agents builder" : String(p.role_title || p.role || "Software Engineer");
-  const target = p.target_level ?? p.level;
-  const bucket = ["student", "junior"].includes(target) ? "junior" : target === "mid" ? "mid" : target === "staff" ? "staff" : "senior";
+  const roleTitle = track === "ai" ? "AI & Agents builder" : String(profile.role_title || profile.role || "Software Engineer");
+  const targetLevel = profile.target_level ?? profile.level;
+  const levelBucket = ["student", "junior"].includes(targetLevel) ? "junior" : targetLevel === "mid" ? "mid" : targetLevel === "staff" ? "staff" : "senior";
   const slug = roleTitle.toLowerCase().replace(/[^a-z0-9֐-׿]+/g, "-").slice(0, 60);
-  const key = track === "ai" ? "ai:agents:all:v2" : `main:${slug}:${bucket}:v2`; // v2: maps that include "excellence"
-  const map = await roleMap(db, key, roleTitle, bucket, track);
+  const roleKey = track === "ai" ? "ai:agents:all:v2" : `main:${slug}:${levelBucket}:v2`; // v2: maps that include "excellence"
+  const map = await roleMap(db, roleKey, roleTitle, levelBucket, track);
   const existing: string[] = input.existing_titles ?? [];
 
-  const out = await askJson({
+  const draft = await askJson({
     system: BASE,
     effort: "medium",
     user: `Build this learner's personal study plan${track === "ai" ? " for the AI & agents track" : " for their target role"} from the role map below.
@@ -109,7 +110,7 @@ How to personalise:
 ${KIND_GUIDE} Use a healthy mix of kinds; for an engineer role at least a quarter should be "coding" or "design".
 
 Learner profile:
-${profileText(p)}
+${profileText(profile)}
 
 Placement results:
 ${JSON.stringify(input.diagnostic ?? {})}
@@ -125,11 +126,12 @@ ${JSON.stringify(map.data)}`,
       })),
     }),
   });
-  return { ...out, role_key: key, sources: map.sources, map_refreshed_at: map.refreshed_at, trends: (map.data as In).trends ?? [], interview_format_notes: (map.data as In).interview_format_notes ?? [], excellence: (map.data as In).excellence ?? [] };
+  const mapData = map.data as LooseJson;
+  return { ...draft, role_key: roleKey, sources: map.sources, map_refreshed_at: map.refreshed_at, trends: mapData.trends ?? [], interview_format_notes: mapData.interview_format_notes ?? [], excellence: mapData.excellence ?? [] };
 }
 
 /* ---------------- lesson + its end-of-lesson test ---------------- */
-const QUIZ_Q = S.obj({ question: S.str(), options: S.arr(S.str()), answer: S.int("index of the correct option"), explain: S.str() });
+const QUIZ_QUESTION_SCHEMA = S.obj({ question: S.str(), options: S.arr(S.str()), answer: S.int("index of the correct option"), explain: S.str() });
 const LESSON_SCHEMA = S.obj({
   title: S.str(),
   intro: S.str("2-3 sentences: why this matters in interviews and at work"),
@@ -152,7 +154,7 @@ const LESSON_SCHEMA = S.obj({
   interview_tips: S.arr(S.str(), "2-4 tips on how this comes up in interviews"),
   test: S.obj({
     type: S.enm(["quiz", "code", "architecture", "practical"]),
-    quiz: S.arr(QUIZ_Q),
+    quiz: S.arr(QUIZ_QUESTION_SCHEMA),
     open_question: S.str(), open_rubric: S.str(),
     code: S.obj({
       title: S.str(), statement: S.str("Markdown, with examples and constraints"), fn_name: S.str(),
@@ -190,12 +192,12 @@ const BODY_SCHEMA = S.obj({
   takeaways: (LESSON_SCHEMA.properties as Record<string, Json>).takeaways,
   interview_tips: (LESSON_SCHEMA.properties as Record<string, Json>).interview_tips,
 });
-const TEST_PARTS = (((LESSON_SCHEMA.properties as Record<string, Json>).test as Json).properties) as Record<string, Json>;
+const TEST_PART_SCHEMAS = (((LESSON_SCHEMA.properties as Record<string, Json>).test as Json).properties) as Record<string, Json>;
 const TEST_SCHEMA: Record<string, Json> = {
-  quiz: S.obj({ quiz: TEST_PARTS.quiz, open_question: TEST_PARTS.open_question, open_rubric: TEST_PARTS.open_rubric }),
-  code: S.obj({ code: TEST_PARTS.code }),
-  architecture: S.obj({ architecture: TEST_PARTS.architecture }),
-  practical: S.obj({ practical: TEST_PARTS.practical }),
+  quiz: S.obj({ quiz: TEST_PART_SCHEMAS.quiz, open_question: TEST_PART_SCHEMAS.open_question, open_rubric: TEST_PART_SCHEMAS.open_rubric }),
+  code: S.obj({ code: TEST_PART_SCHEMAS.code }),
+  architecture: S.obj({ architecture: TEST_PART_SCHEMAS.architecture }),
+  practical: S.obj({ practical: TEST_PART_SCHEMAS.practical }),
 };
 const EMPTY_TEST = {
   quiz: [], open_question: "", open_rubric: "",
@@ -205,15 +207,15 @@ const EMPTY_TEST = {
 };
 const EMPTY_BLOCK = { title: "", md: "", mermaid: "", question: "", options: [], answer: 0, explain: "", steps: [], cards: [] };
 
-export type TopicIn = { title: string; description?: string; module?: string; kind: string };
+export type LessonTopic = { title: string; description?: string; module?: string; kind: string };
 
 /** What the lesson and its test are about. `learner` is omitted for shared (cached) lessons: those are written
  *  for a level band only, so nothing personal ends up in content other learners see. */
-export function lessonAbout(t: TopicIn, opts: { band?: string; learner?: In; mastery?: number; review?: boolean; weak_points?: string[] }) {
-  const kind = (KINDS as readonly string[]).includes(t.kind) ? (t.kind as TopicKind) : "concept";
-  const about = `Topic: ${t.title}
-What the learner should be able to do: ${t.description ?? ""}
-Module: ${t.module ?? ""} · Kind: ${kind}
+export function lessonAbout(topic: LessonTopic, opts: { band?: string; learner?: LooseJson; mastery?: number; review?: boolean; weak_points?: string[] }) {
+  const kind = (KINDS as readonly string[]).includes(topic.kind) ? (topic.kind as TopicKind) : "concept";
+  const about = `Topic: ${topic.title}
+What the learner should be able to do: ${topic.description ?? ""}
+Module: ${topic.module ?? ""} · Kind: ${kind}
 ${opts.learner ? `Learner: ${profileText(opts.learner)}` : `Learner level: ${opts.band ?? "mid"} (this lesson is shared by every learner at this level, so do not assume a particular stack or employer)`}
 ${opts.mastery != null ? `Current mastery of this topic: ${Math.round(opts.mastery)}/100.` : ""}${opts.review ? " This is a REVIEW session: a compact refresher (about half the usual length) that attacks the usual weak points, and a NEW test different from before." : ""}
 ${opts.weak_points?.length ? `Weak points seen in their previous attempt: ${JSON.stringify(opts.weak_points)}` : ""}`;
@@ -222,14 +224,14 @@ ${opts.weak_points?.length ? `Weak points seen in their previous attempt: ${JSON
 
 /** The teaching part of a lesson (no test). */
 export async function lessonBody(about: string, format: string) {
-  const fmt = formatById(format);
+  const teachingFormat = formatById(format);
   const body = await askJson({
     system: BASE, effort: "medium", maxTokens: 40000, schema: BODY_SCHEMA, feature: "lesson_body",
     user: `Write one lesson. (Its end-of-lesson test is written separately; do not include one.)
 
 ${about}
 
-Teaching format: "${fmt.id}". ${fmt.guide}
+Teaching format: "${teachingFormat.id}". ${teachingFormat.guide}
 This format was chosen for this learner because it is what has worked for them, so follow it faithfully; do not blend in the other styles.
 
 Lesson rules:
@@ -238,8 +240,8 @@ Lesson rules:
 - Fill only the fields the block type uses; set the others to empty strings / empty arrays / 0.
 - Code and commands must be correct and runnable. Left-to-right content (code, diagrams) stays in English.`,
   });
-  const blocks = (Array.isArray(body.blocks) ? body.blocks : []).map((b: In) => ({ ...EMPTY_BLOCK, ...b }));
-  return { ...body, blocks, takeaways: body.takeaways ?? [], interview_tips: body.interview_tips ?? [] } as In;
+  const blocks = (Array.isArray(body.blocks) ? body.blocks : []).map((block: LooseJson) => ({ ...EMPTY_BLOCK, ...block }));
+  return { ...body, blocks, takeaways: body.takeaways ?? [], interview_tips: body.interview_tips ?? [] } as LooseJson;
 }
 
 /** One end-of-lesson test. Called 4 times for a new shared template, and again when a learner has seen all. */
@@ -252,25 +254,25 @@ ${about}
 
 ${TEST_GUIDE[testType].replace(/test\.type = "[a-z]+"\. /, "").replace(/\s*Leave [^.]*empty[^.]*\.\s*$/, "").replace(/test\./g, "")}`,
   });
-  return { ...EMPTY_TEST, ...test, type: testType } as In;
+  return { ...EMPTY_TEST, ...test, type: testType } as LooseJson;
 }
 
 /** A short, personal note that opens a (shared) lesson: it names the learner's own weak points. Fast model. */
-export async function personalNote(topicTitle: string, weak: string[], learner: In) {
-  const r = await askJson({
+export async function personalNote(topicTitle: string, weakPoints: string[], learner: LooseJson) {
+  const reply = await askJson({
     system: BASE, effort: "low", maxTokens: 2000, model: CHAT_MODEL, feature: "personal_note",
     schema: S.obj({ note: S.str("2-4 sentences in Hebrew, addressed to the learner") }),
     user: `The learner is about to review "${topicTitle}". In their last test on it these were the weak points:
-${JSON.stringify(weak.slice(0, 6))}
+${JSON.stringify(weakPoints.slice(0, 6))}
 Learner: ${profileText(learner)}
 Write a short opening note: what to pay special attention to in this lesson, given those weak points. Concrete, encouraging, no greeting.`,
   });
-  return String(r.note ?? "");
+  return String(reply.note ?? "");
 }
 
 /** A full personal lesson, for learners outside the cache rollout or topics that are not in the catalog. */
-export async function lessonForLearner(t: TopicIn, format: string, learner: In, mastery: number, review: boolean, weak_points: string[]) {
-  const { about, testType } = lessonAbout(t, { learner, mastery, review, weak_points });
+export async function lessonForLearner(topic: LessonTopic, format: string, learner: LooseJson, mastery: number, review: boolean, weakPoints: string[]) {
+  const { about, testType } = lessonAbout(topic, { learner, mastery, review, weak_points: weakPoints });
   const [body, test] = await Promise.all([lessonBody(about, format), lessonTest(about, testType)]);
   return { ...body, test };
 }
@@ -286,9 +288,9 @@ const REVIEW_SCHEMA = S.obj({
   next_steps: S.arr(S.str(), "1-3 specific things to practise next"),
 });
 
-export async function grade(input: In) {
+export async function grade(input: LooseJson) {
   const kind = String(input.kind);
-  const how: Record<string, string> = {
+  const gradingGuide: Record<string, string> = {
     quiz: `Grade ONLY the open answer against the rubric (the multiple-choice part is scored separately). An empty or off-topic answer scores 0-15.`,
     code: `The code was run against the tests; the results are given. Passing tests is 75% of the score (pass rate x 75). The other 25 points: complexity versus the best reasonable solution, readability, edge-case handling. Dimensions: נכונות, סיבוכיות, קריאות.`,
     architecture: `Grade the design like a senior system-design interviewer. The submission is the canvas (components and the connections between them) plus the learner's notes. Use the rubric dimensions given in the test. Look for: unmet requirements, single points of failure, a data store that does not fit the access pattern, missing caching/queueing where the numbers demand it, components that are present but connected wrongly or serve no purpose, unjustified over-engineering. Say what is good as specifically as what is flawed. An almost empty canvas scores under 20.`,
@@ -298,7 +300,7 @@ export async function grade(input: In) {
     system: BASE,
     effort: "medium",
     user: `Grade this end-of-lesson test submission. Be fair and exact: the learner relies on this score to know whether they are ready for a real interview, so do not inflate it. 85+ means it would pass a real interview at their target level. Every issue needs a concrete fix.
-${how[kind] ?? how.practical}
+${gradingGuide[kind] ?? gradingGuide.practical}
 
 Topic: ${input.topic?.title}
 Learner level: ${input.profile?.level ?? "unknown"}, target role: ${input.profile?.role_title ?? "unknown"}
@@ -313,7 +315,7 @@ ${JSON.stringify(input.submission)}`,
 }
 
 /* ---------------- interview debrief ---------------- */
-export async function debrief(input: In) {
+export async function debrief(input: LooseJson) {
   const type = interviewById(input.type);
   return askJson({
     system: BASE,
@@ -345,7 +347,7 @@ ${JSON.stringify(input.workspace ?? null)}`,
 }
 
 /* ---------------- job description analysis ---------------- */
-export async function jd(input: In) {
+export async function jd(input: LooseJson) {
   return askJson({
     system: BASE,
     effort: "medium",
@@ -373,7 +375,7 @@ ${String(input.jd_text ?? "").slice(0, 12000)}
 }
 
 /* ---------------- "what else do you want to learn": turn a free-text wish into plan topics ---------------- */
-export async function custom(input: In) {
+export async function custom(input: LooseJson) {
   return askJson({
     system: BASE,
     effort: "medium",

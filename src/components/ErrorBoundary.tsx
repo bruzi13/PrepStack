@@ -1,15 +1,17 @@
 // A crash in one screen shows a recovery message instead of a blank page, and is reported.
 import { Component, type ErrorInfo, type ReactNode } from "react";
-import { reportError } from "@/app/monitor";
+import type { ErrorReporter } from "@/services/ErrorReporter";
 
-export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+interface ErrorBoundaryProps { reporter: ErrorReporter; children: ReactNode }
+
+export class ErrorBoundary extends Component<ErrorBoundaryProps, { failed: boolean }> {
   state = { failed: false };
 
   static getDerivedStateFromError() { return { failed: true }; }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     error.stack = `${error.stack ?? ""}\n--- component stack ---${info.componentStack ?? ""}`;
-    reportError("react", error);
+    void this.props.reporter.report("react", error);
   }
 
   render() {

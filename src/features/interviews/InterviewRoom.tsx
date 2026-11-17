@@ -1,174 +1,165 @@
 // The live mock interview: chat with the interviewer, a shared workspace (code editor or architecture canvas),
 // a clock, and at the end a hiring-committee style scorecard.
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { interviewById } from "@shared/catalog";
-import { useMe } from "@/app/AppContext";
-import { chat, runJob } from "@/services/ai";
-import { addTopics } from "@/services/plans";
-import { db } from "@/services/store";
-import type { Canvas, ChatMsg, Interview, Plan, Scorecard, Topic } from "@/types";
-import { ArchCanvas, canvasText, emptyCanvas } from "@/components/ArchCanvas";
+import { useParams } from "react-router-dom";
+import { useServices } from "@/app/AppContext";
+import { ArchitectureDiagram } from "@/domain/ArchitectureDiagram";
+import { InterviewTranscript, START_MESSAGE, type MockInterview } from "@/domain/MockInterview";
+import type { ArchitectureCanvas, ChatMessage, InterviewWorkspace } from "@/domain/records";
+import type { CodeLanguage } from "@/services/CodeRunner";
+import { ArchCanvas } from "@/components/ArchCanvas";
 import { ChatBox } from "@/components/ChatBox";
-import { CodeEditor, type Lang } from "@/components/CodeLab";
-import { Bar, Busy, ErrorBox, ScoreRing } from "@/components/ui";
+import { CodeEditor } from "@/components/CodeLab";
+import { ErrorMessage, Loading } from "@/components/ui";
+import { ScorecardView } from "./ScorecardView";
 
-const SIGNAL: Record<string, string> = { strong_no: "Strong No Hire", no: "No Hire", lean_no: "Lean No Hire", lean_yes: "Lean Hire", yes: "Hire", strong_yes: "Strong Hire" };
+/** The clock turns red in the last two minutes. */
+const LOW_TIME_SECONDS = 120;
 
-/** The interviewer sees the candidate's AI-tool usage as part of the candidate's next message. */
-function toApi(transcript: ChatMsg[]) {
-  const out: { role: "user" | "assistant"; content: string }[] = [];
-  let tool = "";
-  for (const m of transcript) {
-    if (m.tool) { tool += `[AI-TOOL] ${m.role === "user" ? "candidate asked the AI assistant" : "AI assistant replied"}: ${m.content}\n`; continue; }
-    out.push({ role: m.role, content: m.role === "user" && tool ? `${tool}\n${m.content}` : m.content });
-    if (m.role === "user") tool = "";
-  }
-  return out;
-}
+const formatClock = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 
 export default function InterviewRoom() {
-  const { id } = useParams();
-  const { user } = useMe();
-  const [iv, setIv] = useState<Interview | null>(null);
-  const [msgs, setMsgs] = useState<ChatMsg[]>([]);
+  const { interviewId } = useParams();
+  const { interviews } = useServices();
+  const [interview, setInterview] = useState<MockInterview | null>(null);
+  const [transcript, setTranscript] = useState<ChatMessage[]>([]);
   const [streaming, setStreaming] = useState("");
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
+  const [error, setError] = useState("");
   const [debriefing, setDebriefing] = useState(false);
   const [code, setCode] = useState("");
-  const [lang, setLang] = useState<Lang>("js");
-  const [left, setLeft] = useState<number | null>(null);
-  const [aiAsk, setAiAsk] = useState("");
-  const [pane, setPane] = useState<"chat" | "ws">("chat");
-  const canvas = useRef<Canvas>(emptyCanvas());
-  const opened = useRef(false);
+  const [language, setLanguage] = useState<CodeLanguage>("js");
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  const [assistantQuestion, setAssistantQuestion] = useState("");
+  const [visiblePane, setVisiblePane] = useState<"chat" | "workspace">("chat");
+  const canvas = useRef<ArchitectureCanvas>(ArchitectureDiagram.empty());
+  const openingRequested = useRef(false);
 
-  const type = iv ? interviewById(iv.type) : null;
-  const workspace = () => (type?.workspace === "code" ? (code.trim() ? `Language: ${lang}\n${code}` : "") : type?.workspace === "canvas" ? canvasText(canvas.current) : "");
+  const type = interview?.type ?? null;
 
-  async function turn(history: ChatMsg[], row: Interview) {
-    setBusy(true); setErr("");
-    try {
-      const reply = await chat({ mode: "interview", type: row.type, config: row.config, messages: toApi(history), workspace: workspace() }, setStreaming);
-      const next = [...history, { role: "assistant" as const, content: reply }];
-      setMsgs(next);
-      await db.update("prep_interviews", row.id, { transcript: next, workspace: { code, lang, canvas: canvas.current } });
-    } catch (e) { setErr((e as Error).message); }
+  /** The workspace as the interviewer reads it. */
+  function workspaceText(): string {
+    if (type?.workspace === "code") return code.trim() ? `Language: ${language}\n${code}` : "";
+    if (type?.workspace === "canvas") return new ArchitectureDiagram(canvas.current).toText();
+    return "";
+  }
+  const workspaceState = (): InterviewWorkspace => ({ code, lang: language, canvas: canvas.current });
+
+  async function interviewerTurn(current: MockInterview, history: ChatMessage[]) {
+    setBusy(true); setError("");
+    try { setTranscript(await interviews.interviewerTurn(current, history, workspaceState(), workspaceText(), setStreaming)); }
+    catch (failure) { setError((failure as Error).message); }
     setStreaming(""); setBusy(false);
   }
 
   useEffect(() => {
-    db.list<Interview>("prep_interviews", { eq: { id } }).then(([row]) => {
-      if (!row) { setErr("הראיון לא נמצא."); return; }
-      setIv(row); setMsgs(row.transcript ?? []);
-      if (row.workspace) { setCode(row.workspace.code ?? ""); setLang(row.workspace.lang ?? "js"); canvas.current = row.workspace.canvas ?? emptyCanvas(); }
-      if (row.status === "live") {
-        setLeft((row.config.minutes ?? 30) * 60);
-        if (!(row.transcript ?? []).length && !opened.current) { opened.current = true; const first = [{ role: "user" as const, content: "[START]" }]; setMsgs(first); turn(first, row); }
+    interviews.find(interviewId ?? "").then((loaded) => {
+      if (!loaded) { setError("הראיון לא נמצא."); return; }
+      setInterview(loaded);
+      setTranscript(loaded.transcript);
+      if (loaded.workspace) {
+        setCode(loaded.workspace.code ?? "");
+        setLanguage(loaded.workspace.lang ?? "js");
+        canvas.current = loaded.workspace.canvas ?? ArchitectureDiagram.empty();
       }
-    }).catch((e) => setErr(e.message));
+      if (!loaded.isLive) return;
+      setSecondsLeft(loaded.durationSeconds);
+      // A new interview: ask the interviewer to open (once, even under React's double effects in development).
+      if (!loaded.transcript.length && !openingRequested.current) {
+        openingRequested.current = true;
+        const opening: ChatMessage[] = [{ role: "user", content: START_MESSAGE }];
+        setTranscript(opening);
+        void interviewerTurn(loaded, opening);
+      }
+    }).catch((failure: Error) => setError(failure.message));
+    // Only a new interview id reloads the room.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [interviewId]);
 
-  const ticking = left != null;
+  const clockRunning = secondsLeft != null && !!interview?.isLive;
   useEffect(() => {
-    if (!ticking || iv?.status !== "live") return;
-    const t = setInterval(() => setLeft((s) => (s == null ? s : Math.max(0, s - 1))), 1000);
-    return () => clearInterval(t);
-  }, [ticking, iv?.status]);
+    if (!clockRunning) return;
+    const timer = setInterval(() => setSecondsLeft((seconds) => (seconds == null ? seconds : Math.max(0, seconds - 1))), 1000);
+    return () => clearInterval(timer);
+  }, [clockRunning]);
 
-  function send(text: string) { if (!iv) return; const next = [...msgs, { role: "user" as const, content: text }]; setMsgs(next); turn(next, iv); }
+  function sendAnswer(text: string) {
+    if (!interview) return;
+    const updated: ChatMessage[] = [...transcript, { role: "user", content: text }];
+    setTranscript(updated);
+    void interviewerTurn(interview, updated);
+  }
 
-  async function askAi() {
-    if (!iv || !aiAsk.trim()) return;
-    const q = aiAsk.trim(); setAiAsk("");
-    const withQ = [...msgs, { role: "user" as const, content: q, tool: true }];
-    setMsgs(withQ); setBusy(true);
-    try {
-      const reply = await chat({ mode: "pair", config: iv.config, messages: [{ role: "user", content: `${q}${code.trim() ? `\n\nCurrent code:\n${code}` : ""}` }] }, setStreaming);
-      const next = [...withQ, { role: "assistant" as const, content: reply, tool: true }];
-      setMsgs(next); await db.update("prep_interviews", iv.id, { transcript: next });
-    } catch (e) { setErr((e as Error).message); }
+  async function askAssistant() {
+    const question = assistantQuestion.trim();
+    if (!interview || !question) return;
+    setAssistantQuestion("");
+    setTranscript([...transcript, { role: "user", content: question, tool: true }]);
+    setBusy(true);
+    try { setTranscript(await interviews.askAssistant(interview, transcript, question, code, setStreaming)); }
+    catch (failure) { setError((failure as Error).message); }
     setStreaming(""); setBusy(false);
   }
 
   async function finish() {
-    if (!iv) return;
-    setDebriefing(true); setErr("");
-    try {
-      const ws = { code, lang, canvas: canvas.current };
-      // The server reads the interview from the database, so save the final transcript and workspace first.
-      await db.update("prep_interviews", iv.id, { transcript: msgs, workspace: { ...ws, text: workspace() || null } });
-      const scorecard = await runJob<Scorecard>("debrief", { interviewId: iv.id }, user.id);
-      await db.update("prep_interviews", iv.id, { status: "done", scorecard, score: scorecard.score });
-      setIv({ ...iv, status: "done", scorecard, score: scorecard.score });
-    } catch (e) { setErr((e as Error).message); }
+    if (!interview) return;
+    setDebriefing(true); setError("");
+    try { setInterview(await interviews.finish(interview, transcript, { ...workspaceState(), text: workspaceText() || null })); }
+    catch (failure) { setError((failure as Error).message); }
     setDebriefing(false);
   }
 
-  if (!iv || !type) return err ? <ErrorBox msg={err} /> : <Busy label="טוען את הראיון…" />;
-  if (debriefing) return <Busy label="מכין משוב…" />;
+  if (!interview || !type) return error ? <ErrorMessage message={error} /> : <Loading label="טוען את הראיון…" />;
+  if (debriefing) return <Loading label="מכין משוב…" />;
+  if (interview.isFinished && interview.scorecard) return <ScorecardView interview={interview} transcript={transcript} />;
 
-  if (iv.status === "done" && iv.scorecard) return <ScorecardView iv={iv} msgs={msgs} />;
-
-  const answered = msgs.filter((m) => m.role === "user" && !m.tool && m.content !== "[START]").length;
-  const mm = left != null ? `${String(Math.floor(left / 60)).padStart(2, "0")}:${String(left % 60).padStart(2, "0")}` : "";
+  const answerCount = new InterviewTranscript(transcript).answerCount;
+  const confirmFinish = () => { if (window.confirm("לסיים את הראיון ולקבל משוב?")) void finish(); };
 
   return (
     <div className="page room">
       <div className="row between page-head">
-        <div><h1>{type.title}</h1><p className="muted">{iv.config.level} · {iv.config.lang === "en" ? "English" : "עברית"}</p></div>
-        <div className="row"><span role="timer" aria-label="הזמן שנותר" className={`clock ${left != null && left < 120 ? "low" : ""}`}>{left === 0 ? "הזמן נגמר" : mm}</span>
-          <button className="btn primary" disabled={busy || answered === 0} onClick={() => { if (window.confirm("לסיים את הראיון ולקבל משוב?")) finish(); }}>סיום</button></div>
+        <div><h1>{type.title}</h1><p className="muted">{interview.config.level} · {interview.languageLabel}</p></div>
+        <div className="row">
+          <span role="timer" aria-label="הזמן שנותר" className={`clock ${secondsLeft != null && secondsLeft < LOW_TIME_SECONDS ? "low" : ""}`}>
+            {secondsLeft === 0 ? "הזמן נגמר" : secondsLeft != null ? formatClock(secondsLeft) : ""}
+          </span>
+          <button className="btn primary" disabled={busy || answerCount === 0} onClick={confirmFinish}>סיום</button>
+        </div>
       </div>
-      <ErrorBox msg={err} />
+      <ErrorMessage message={error} />
       {type.workspace !== "none" && <div className="seg room-tabs" role="group" aria-label="תצוגה">
-        <button aria-pressed={pane === "chat"} className={pane === "chat" ? "on" : ""} onClick={() => setPane("chat")}>שיחה</button>
-        <button aria-pressed={pane === "ws"} className={pane === "ws" ? "on" : ""} onClick={() => setPane("ws")}>{type.workspace === "code" ? "עורך קוד" : "לוח"}</button>
+        <button aria-pressed={visiblePane === "chat"} className={visiblePane === "chat" ? "on" : ""} onClick={() => setVisiblePane("chat")}>שיחה</button>
+        <button aria-pressed={visiblePane === "workspace"} className={visiblePane === "workspace" ? "on" : ""} onClick={() => setVisiblePane("workspace")}>
+          {type.workspace === "code" ? "עורך קוד" : "לוח"}
+        </button>
       </div>}
-      <div className={`room-grid ${type.workspace === "none" ? "solo" : ""}`} data-pane={pane}>
-        <ChatBox messages={msgs} streaming={streaming} busy={busy} onSend={send} lang={iv.config.lang} />
+      <div className={`room-grid ${type.workspace === "none" ? "solo" : ""}`} data-pane={visiblePane === "workspace" ? "ws" : "chat"}>
+        <ChatBox messages={transcript} streaming={streaming} busy={busy} onSend={sendAnswer} lang={interview.config.lang} />
         {type.workspace === "code" && <div className="card ws">
-          <div className="row between"><b>עורך משותף</b><div className="seg"><button className={lang === "js" ? "on" : ""} onClick={() => setLang("js")}>JavaScript</button><button className={lang === "py" ? "on" : ""} onClick={() => setLang("py")}>Python</button></div></div>
-          <CodeEditor value={code} onChange={setCode} lang={lang} height="420px" />
+          <div className="row between">
+            <b>עורך משותף</b>
+            <div className="seg">
+              <button className={language === "js" ? "on" : ""} onClick={() => setLanguage("js")}>JavaScript</button>
+              <button className={language === "py" ? "on" : ""} onClick={() => setLanguage("py")}>Python</button>
+            </div>
+          </div>
+          <CodeEditor value={code} onChange={setCode} language={language} height="420px" />
           {type.id === "ai_assisted" && <div className="ai-tool">
             <b>עוזר AI</b>
-            <div className="row"><input dir="auto" value={aiAsk} onChange={(e) => setAiAsk(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && askAi()} placeholder="בקשו מהעוזר לכתוב, להסביר או לבדוק קוד…" /><button className="btn" disabled={busy || !aiAsk.trim()} onClick={askAi}>שאלו</button></div>
+            <div className="row">
+              <input dir="auto" value={assistantQuestion} onChange={(event) => setAssistantQuestion(event.target.value)}
+                onKeyDown={(event) => event.key === "Enter" && !event.nativeEvent.isComposing && void askAssistant()}
+                placeholder="בקשו מהעוזר לכתוב, להסביר או לבדוק קוד…" />
+              <button className="btn" disabled={busy || !assistantQuestion.trim()} onClick={askAssistant}>שאלו</button>
+            </div>
           </div>}
         </div>}
-        {type.workspace === "canvas" && <div className="card ws"><b>לוח ארכיטקטורה משותף</b><ArchCanvas value={canvas.current} onChange={(c) => { canvas.current = c; }} height={400} /></div>}
+        {type.workspace === "canvas" && <div className="card ws">
+          <b>לוח ארכיטקטורה משותף</b>
+          <ArchCanvas value={canvas.current} onChange={(updated) => { canvas.current = updated; }} height={400} />
+        </div>}
       </div>
     </div>
   );
 }
-
-function ScorecardView({ iv, msgs }: { iv: Interview; msgs: ChatMsg[] }) {
-  const { user } = useMe();
-  const s = iv.scorecard!;
-  const [added, setAdded] = useState<string[]>([]);
-  async function addDrill(d: Scorecard["drills"][number]) {
-    const [plan] = await db.list<Plan>("prep_plans", { eq: { user_id: user.id, track: "main", active: true } });
-    if (!plan) return;
-    const topics = await db.list<Topic>("prep_topics", { eq: { plan_id: plan.id } });
-    await addTopics(user, plan, [{ ...d, module: "מהראיונות שלי", priority: 1 }], topics.length);
-    setAdded([...added, d.title]);
-  }
-  return (
-    <div className="page">
-      <Link to="/interviews" className="link">→ לראיונות</Link>
-      <div className="card"><div className="review-head"><ScoreRing score={s.score} label="ציון" /><div><h2>{iv.config.title}</h2><span className={`pill ${s.score >= 70 ? "good" : s.score >= 50 ? "warn" : "bad"}`}>{SIGNAL[s.hire_signal] ?? s.hire_signal}</span><p>{s.summary}</p></div></div>
-        <div className="dims">{s.dimensions.map((d) => <div key={d.name} className="dim"><div className="dim-top"><span>{d.name}</span><b>{d.score}</b></div><Bar value={d.score} /><small className="muted">{d.comment}</small></div>)}</div></div>
-      <div className="grid2">
-        <div className="card"><h3>מה עבד</h3><ul className="plus">{s.strengths.map((x, i) => <li key={i}>{x}</li>)}</ul></div>
-        <div className="card"><h3>מה לשפר</h3><ul>{s.improvements.map((x, i) => <li key={i}>{x}</li>)}</ul></div>
-      </div>
-      {s.moments.length > 0 && <div className="card"><h3>רגעים מרכזיים</h3>{s.moments.map((m, i) => <div key={i} className="moment"><blockquote>"{m.quote}"</blockquote><p><b>משוב:</b> {m.feedback}</p><p><b>חלופה חזקה:</b> {m.better}</p></div>)}</div>}
-      {s.drills.length > 0 && <div className="card"><h3>להמשך</h3><ul className="list">{s.drills.map((d) => <li key={d.title}><div className="row between"><span><b>{d.title}</b> <small className="muted">{d.description}</small></span>
-        <button className="btn small" disabled={added.includes(d.title)} onClick={() => addDrill(d)}>{added.includes(d.title) ? "נוסף לתוכנית" : "הוספה לתוכנית"}</button></div></li>)}</ul></div>}
-      <details className="card"><summary>תמליל הראיון</summary><ChatLog msgs={msgs} /></details>
-    </div>
-  );
-}
-
-const ChatLog = ({ msgs }: { msgs: ChatMsg[] }) => <div className="chat-log static">{msgs.filter((m) => m.content !== "[START]").map((m, i) => <div key={i} className={`msg ${m.role} ${m.tool ? "tool" : ""}`}><span className="who">{m.tool ? "עוזר AI" : m.role === "user" ? "אתם" : "המראיין"}</span><div className="md">{m.content}</div></div>)}</div>;

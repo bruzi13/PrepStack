@@ -11,19 +11,19 @@ export class UserError extends Error {
 export const json = (body: unknown, status = 200, requestId?: string) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...(requestId ? { "x-request-id": requestId } : {}) } });
 
-const clip = (s: unknown, n: number) => (typeof s === "string" ? s.slice(0, n) : undefined);
+const truncate = (value: unknown, maxLength: number) => (typeof value === "string" ? value.slice(0, maxLength) : undefined);
 
 /** Record an unexpected server error. Never throws: monitoring must not take the request down with it. */
 export async function report(err: unknown, event: string, detail: Record<string, unknown> = {}, db?: SupabaseClient) {
-  const c = ctx();
-  const e = err instanceof Error ? err : new Error(String(err));
-  log("error", event, { message: e.message, ...detail });
-  const client = db ?? c?.db;
+  const context = ctx();
+  const error = err instanceof Error ? err : new Error(String(err));
+  log("error", event, { message: error.message, ...detail });
+  const client = db ?? context?.db;
   if (!client) return;
   try {
     await client.from("ops_events").insert({
-      level: "error", source: "server", event, message: clip(e.message, 500),
-      detail: { ...detail, stack: clip(e.stack, 2000), fn: c?.fn }, user_id: c?.userId ?? null, request_id: c?.requestId ?? null,
+      level: "error", source: "server", event, message: truncate(error.message, 500),
+      detail: { ...detail, stack: truncate(error.stack, 2000), fn: context?.fn }, user_id: context?.userId ?? null, request_id: context?.requestId ?? null,
     });
   } catch { /* the log line above is the fallback */ }
 }

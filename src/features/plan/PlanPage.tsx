@@ -1,114 +1,139 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import { KIND_LABEL, TEST_FOR_KIND, TEST_LABEL } from "@shared/catalog";
-import { useMe } from "@/app/AppContext";
-import { addCustomTopics, createPlan, refreshPlan } from "@/services/plans";
-import { isDue, levelOf, localDate } from "@/learning/srs";
-import { db } from "@/services/store";
-import type { Plan, Topic } from "@/types";
-import { Bar, Busy, ErrorBox } from "@/components/ui";
+import { useLearner, useServices } from "@/app/AppContext";
+import { useAsyncData } from "@/app/useAsyncData";
+import type { Track } from "@/domain/records";
+import type { StudyPlan } from "@/domain/StudyPlan";
+import type { Topic } from "@/domain/Topic";
+import type { TopicList } from "@/domain/TopicList";
+import { ErrorMessage, Loading, ProgressBar } from "@/components/ui";
 
+type PlanAction = "" | "build" | "refresh" | "request";
 
-export default function PlanPage({ track }: { track: "main" | "ai" }) {
-  const { user, profile } = useMe();
-  const [plan, setPlan] = useState<Plan | null | undefined>(undefined);
-  const [topics, setTopics] = useState<Topic[]>([]);
-  const [busy, setBusy] = useState("");
-  const [err, setErr] = useState("");
-  const [note, setNote] = useState("");
-  const [wish, setWish] = useState("");
-  const [wishNote, setWishNote] = useState("");
+export default function PlanPage({ track }: { track: Track }) {
+  const { user } = useLearner();
+  const { plans } = useServices();
+  const { data: loaded, error: loadError, reload } = useAsyncData(() => plans.loadActivePlan(user.id, track), [plans, user.id, track]);
+  const [action, setAction] = useState<PlanAction>("");
+  const [actionError, setActionError] = useState("");
+  const [refreshNote, setRefreshNote] = useState("");
 
-  const load = useCallback(async () => {
-    const [p] = await db.list<Plan>("prep_plans", { eq: { user_id: user.id, track, active: true } });
-    setPlan(p ?? null);
-    setTopics(p ? await db.list<Topic>("prep_topics", { eq: { plan_id: p.id }, order: "ord" }) : []);
-  }, [user.id, track]);
-  useEffect(() => { load().catch((e) => setErr(e.message)); }, [load]);
-
-  async function build() {
-    setBusy("build"); setErr("");
-    try { await createPlan(user, profile, track); await load(); } catch (e) { setErr((e as Error).message); }
-    setBusy("");
-  }
-  async function refresh() {
-    if (!plan) return;
-    setBusy("refresh"); setErr(""); setNote("");
-    try { const n = await refreshPlan(user, profile, plan, topics); await load(); setNote(n ? `נוספו ${n} נושאים.` : "התוכנית מעודכנת."); }
-    catch (e) { setErr((e as Error).message); }
-    setBusy("");
+  /** Run a plan action, then reload the plan; errors show above the plan. */
+  async function perform(kind: PlanAction, work: () => Promise<void>) {
+    setAction(kind); setActionError("");
+    try { await work(); await reload(); } catch (failure) { setActionError((failure as Error).message); }
+    setAction("");
   }
 
-  async function addWish() {
-    if (!plan || !wish.trim()) return;
-    setBusy("wish"); setErr(""); setWishNote("");
-    try { const r = await addCustomTopics(user, profile, plan, topics, wish.trim()); await load(); setWish(""); setWishNote(r.note || (r.added ? "נוסף לסוף התוכנית." : "לא נוספו נושאים.")); }
-    catch (e) { setErr((e as Error).message); }
-    setBusy("");
-  }
+  const buildPlan = () => perform("build", async () => { await plans.createPlan(user.id, track); });
+  const error = actionError || loadError;
 
-  if (plan === undefined && !err) return <Busy label="טוען…" />;
-  if (busy === "build") return <Busy label="בונה תוכנית…" hint="זה לוקח דקה או שתיים" />;
+  if (loaded === undefined && !error) return <Loading label="טוען…" />;
+  if (action === "build") return <Loading label="בונה תוכנית…" hint="זה לוקח דקה או שתיים" />;
+  if (!loaded) return <EmptyPlan track={track} error={error} onBuild={buildPlan} />;
 
-  if (!plan) return (
+  const { plan, topics } = loaded;
+  const refreshFromMarket = () => perform("refresh", async () => {
+    setRefreshNote("");
+    const addedCount = await plans.refreshFromMarket(plan, topics);
+    setRefreshNote(addedCount ? `נוספו ${addedCount} נושאים.` : "התוכנית מעודכנת.");
+  });
+  const rebuild = () => { if (window.confirm("לבנות את התוכנית מחדש? נושאים שכבר למדתם יישמרו בהיסטוריה.")) void buildPlan(); };
+
+  return (
+    <div className="page">
+      <div className="row between page-head">
+        <div><h1>{plan.title}</h1><p className="muted">{topics.studiedCount}/{topics.size} נושאים נלמדו{plan.refreshedOn ? ` · עודכן ${plan.refreshedOn}` : ""}</p></div>
+        <div className="row">
+          <button className="btn" onClick={refreshFromMarket} disabled={!!action}>{action === "refresh" ? "בודק…" : "עדכון מהשוק"}</button>
+          <button className="btn ghost" onClick={rebuild} disabled={!!action}>בנייה מחדש</button>
+        </div>
+      </div>
+      <ErrorMessage message={error} />
+      {refreshNote && <div className="notice">{refreshNote}</div>}
+      {action === "refresh" && <Loading label="בודק עדכונים…" />}
+      <PlanOverview plan={plan} />
+      {topics.moduleNames().map((moduleName) => <ModuleSection key={moduleName} name={moduleName} topics={topics.inModule(moduleName)} />)}
+      <TopicRequestForm plan={plan} topics={topics} busy={!!action} onSubmit={(work) => perform("request", work)} submitting={action === "request"} />
+    </div>
+  );
+}
+
+function EmptyPlan({ track, error, onBuild }: { track: Track; error: string; onBuild: () => void }) {
+  return (
     <div className="page"><div className="card narrow">
       {track === "ai" ? <>
         <h1>AI ואייג'נטים</h1>
         <p>מהשימוש הבסיסי ב-ChatGPT ועד לבנות ולהוביל אייג'נטים שעושים עבודה אמיתית. המסלול עובר דרך prompting ו-context engineering, tool use, RAG, לולאת האייג'נט, MCP, evals, עבודה עם coding agents, multi-agent ומערכות AI בפרודקשן.</p>
       </> : <><h1>התוכנית שלי</h1><p>עדיין אין לכם תוכנית לימודים.</p></>}
-      <ErrorBox msg={err} />
-      <button className="btn primary" onClick={build}>{track === "ai" ? "בנו לי את המסלול" : "בנו לי תוכנית"}</button>
+      <ErrorMessage message={error} />
+      <button className="btn primary" onClick={onBuild}>{track === "ai" ? "בנו לי את המסלול" : "בנו לי תוכנית"}</button>
     </div></div>
   );
+}
 
-  const modules = [...new Set(topics.map((t) => t.module))];
-  const learned = topics.filter((t) => t.reviews > 0).length;
-  const refreshed = plan.data.map_refreshed_at ? localDate(plan.data.map_refreshed_at) : "";
+function PlanOverview({ plan }: { plan: StudyPlan }) {
+  return (
+    <section className="card">
+      <p>{plan.summary}</p>
+      {plan.marketNotes.length > 0 && <><h4>מגמות בשוק</h4><ul>{plan.marketNotes.map((note, index) => <li key={index}>{note}</li>)}</ul></>}
+      {plan.trends.length > 0 && <details><summary>מה השתנה לאחרונה</summary>
+        {plan.trends.map((trend, index) => <p key={index}><b>{trend.title}:</b> {trend.what_changed} <span className="muted">{trend.why_it_matters}</span></p>)}</details>}
+      {plan.excellence.length > 0 && <details><summary>מה מבדיל את הטובים ביותר</summary>
+        <ul>{plan.excellence.map((note, index) => <li key={index}><b>{note.title}:</b> {note.why}</li>)}</ul></details>}
+      {plan.interviewFormatNotes.length > 0 && <details><summary>מבנה הראיונות</summary>
+        <ul>{plan.interviewFormatNotes.map((note, index) => <li key={index}>{note}</li>)}</ul></details>}
+      {plan.sources.length > 0 && <details><summary>מקורות ({plan.sources.length})</summary>
+        <ul className="ltr sources">{plan.sources.map((source) => <li key={source.url}><a href={source.url} target="_blank" rel="noreferrer noopener">{source.title || source.url}</a></li>)}</ul></details>}
+    </section>
+  );
+}
+
+function ModuleSection({ name, topics }: { name: string; topics: Topic[] }) {
+  return (
+    <section className="card">
+      <h3>{name}</h3>
+      <div className="topics">{topics.map((topic) => (
+        <Link key={topic.id} to={`/lesson/${topic.id}`} className="topic">
+          <div className="topic-main">
+            <b>{topic.title}</b>
+            {topic.isHighPriority && <span className="pill hot">עדיפות גבוהה</span>}
+            {topic.isDueForReview() && <span className="pill warn">לחזרה</span>}
+            <small className="muted">{topic.description}</small>
+            <small className="muted">{topic.kindLabel} · {topic.testLabel} · {topic.estimatedMinutes} דק׳</small>
+          </div>
+          <div className="topic-side">
+            <span className={`pill ${topic.masteryLevel.tone}`}>{topic.masteryLevel.label}</span>
+            {topic.isStudied && <ProgressBar value={topic.mastery} />}
+          </div>
+        </Link>
+      ))}</div>
+    </section>
+  );
+}
+
+/** "What else do you want to learn?" */
+function TopicRequestForm({ plan, topics, busy, submitting, onSubmit }: {
+  plan: StudyPlan; topics: TopicList; busy: boolean; submitting: boolean; onSubmit: (work: () => Promise<void>) => Promise<void>;
+}) {
+  const { plans } = useServices();
+  const [request, setRequest] = useState("");
+  const [resultNote, setResultNote] = useState("");
+
+  const submit = () => onSubmit(async () => {
+    setResultNote("");
+    const { note, addedCount } = await plans.addRequestedTopics(plan, topics, request.trim());
+    setRequest("");
+    setResultNote(note || (addedCount ? "נוסף לסוף התוכנית." : "לא נוספו נושאים."));
+  });
 
   return (
-    <div className="page">
-      <div className="row between page-head">
-        <div><h1>{plan.title}</h1><p className="muted">{learned}/{topics.length} נושאים נלמדו{refreshed ? ` · עודכן ${refreshed}` : ""}</p></div>
-        <div className="row">
-          <button className="btn" onClick={refresh} disabled={!!busy}>{busy === "refresh" ? "בודק…" : "עדכון מהשוק"}</button>
-          <button className="btn ghost" onClick={() => { if (window.confirm("לבנות את התוכנית מחדש? נושאים שכבר למדתם יישמרו בהיסטוריה.")) build(); }} disabled={!!busy}>בנייה מחדש</button>
-        </div>
-      </div>
-      <ErrorBox msg={err} />
-      {note && <div className="notice">{note}</div>}
-      {busy === "refresh" && <Busy label="בודק עדכונים…" />}
-
-      <section className="card">
-        <p>{plan.data.summary}</p>
-        {!!plan.data.market_notes?.length && <><h4>מגמות בשוק</h4><ul>{plan.data.market_notes.map((n, i) => <li key={i}>{n}</li>)}</ul></>}
-        {!!plan.data.trends?.length && <details><summary>מה השתנה לאחרונה</summary>{plan.data.trends.map((t, i) => <p key={i}><b>{t.title}:</b> {t.what_changed} <span className="muted">{t.why_it_matters}</span></p>)}</details>}
-        {!!plan.data.excellence?.length && <details><summary>מה מבדיל את הטובים ביותר</summary><ul>{plan.data.excellence.map((x, i) => <li key={i}><b>{x.title}:</b> {x.why}</li>)}</ul></details>}
-        {!!plan.data.interview_format_notes?.length && <details><summary>מבנה הראיונות</summary><ul>{plan.data.interview_format_notes.map((n, i) => <li key={i}>{n}</li>)}</ul></details>}
-        {!!plan.data.sources?.length && <details><summary>מקורות ({plan.data.sources.length})</summary><ul className="ltr sources">{plan.data.sources.map((s) => <li key={s.url}><a href={s.url} target="_blank" rel="noreferrer noopener">{s.title || s.url}</a></li>)}</ul></details>}
-      </section>
-
-      {modules.map((m) => (
-        <section key={m} className="card">
-          <h3>{m}</h3>
-          <div className="topics">{topics.filter((t) => t.module === m).map((t) => { const lv = levelOf(t.mastery, t.reviews); return (
-            <Link key={t.id} to={`/lesson/${t.id}`} className="topic">
-              <div className="topic-main">
-                <b>{t.title}</b>{t.priority === 1 && <span className="pill hot">עדיפות גבוהה</span>}{isDue(t) && <span className="pill warn">לחזרה</span>}
-                <small className="muted">{t.description}</small>
-                <small className="muted">{KIND_LABEL[t.kind]} · {TEST_LABEL[TEST_FOR_KIND[t.kind]]} · {t.est_minutes} דק׳</small>
-              </div>
-              <div className="topic-side"><span className={`pill ${lv.tone}`}>{lv.label}</span>{t.reviews > 0 && <Bar value={t.mastery} />}</div>
-            </Link>
-          ); })}</div>
-        </section>
-      ))}
-
-      <section className="card wish">
-        <h3>הוספת נושא</h3>
-        <textarea dir="auto" rows={3} value={wish} maxLength={2000} onChange={(e) => setWish(e.target.value)} placeholder="מה עוד תרצו ללמוד? למשל: Kafka לעומק, כתיבת design doc, OpenTelemetry" />
-        {busy === "wish" ? <Busy label="מוסיף…" /> : <button className="btn primary" disabled={!wish.trim() || !!busy} onClick={addWish}>הוספה</button>}
-        {wishNote && <div className="notice">{wishNote}</div>}
-      </section>
-    </div>
+    <section className="card wish">
+      <h3>הוספת נושא</h3>
+      <textarea dir="auto" rows={3} value={request} maxLength={2000} onChange={(event) => setRequest(event.target.value)}
+        placeholder="מה עוד תרצו ללמוד? למשל: Kafka לעומק, כתיבת design doc, OpenTelemetry" />
+      {submitting ? <Loading label="מוסיף…" /> : <button className="btn primary" disabled={!request.trim() || busy} onClick={submit}>הוספה</button>}
+      {resultNote && <div className="notice">{resultNote}</div>}
+    </section>
   );
 }

@@ -5,17 +5,17 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export interface Ctx { requestId: string; fn: string; userId?: string; db?: SupabaseClient; feature?: string }
-const store = new AsyncLocalStorage<Ctx>();
+export interface RequestContext { requestId: string; fn: string; userId?: string; db?: SupabaseClient; feature?: string }
+const store = new AsyncLocalStorage<RequestContext>();
 
-export const ctx = (): Ctx | undefined => store.getStore();
+export const ctx = (): RequestContext | undefined => store.getStore();
 
 /** Run `work` with a request context. The id comes from the browser when it sent a sane one. */
-export function withRequest<T>(req: Request | null, fn: string, work: (c: Ctx) => Promise<T>): Promise<T> {
+export function withRequest<T>(req: Request | null, fn: string, work: (context: RequestContext) => Promise<T>): Promise<T> {
   const given = req?.headers.get("x-request-id") ?? "";
   const requestId = /^[A-Za-z0-9-]{8,64}$/.test(given) ? given : randomUUID();
-  const c: Ctx = { requestId, fn };
-  return store.run(c, () => work(c));
+  const context: RequestContext = { requestId, fn };
+  return store.run(context, () => work(context));
 }
 
 /** Tag work with the feature that is spending tokens (lesson_body, grade, chat...). */
@@ -28,7 +28,7 @@ type Level = "debug" | "info" | "warn" | "error";
 /** One JSON line per event: Netlify's log viewer and any log drain can filter on the fields. */
 export function log(level: Level, event: string, fields: Record<string, unknown> = {}) {
   if (process.env.VITEST && level !== "error") return; // keep test output readable
-  const c = store.getStore();
-  const line = JSON.stringify({ t: new Date().toISOString(), level, event, fn: c?.fn, requestId: c?.requestId, userId: c?.userId, ...fields });
+  const context = store.getStore();
+  const line = JSON.stringify({ t: new Date().toISOString(), level, event, fn: context?.fn, requestId: context?.requestId, userId: context?.userId, ...fields });
   if (level === "error") console.error(line); else if (level === "warn") console.warn(line); else console.log(line);
 }

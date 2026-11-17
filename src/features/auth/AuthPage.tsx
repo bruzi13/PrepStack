@@ -1,41 +1,56 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { auth, DEMO } from "@/services/store";
+import { useServices } from "@/app/AppContext";
+
+type AuthMode = "signIn" | "signUp" | "reset";
+
+const HEADINGS: Record<AuthMode, string> = { signUp: "יצירת חשבון", signIn: "התחברות", reset: "איפוס סיסמה" };
+const SUBMIT_LABELS: Record<AuthMode, string> = { signUp: "הרשמה", signIn: "כניסה", reset: "שליחת קישור" };
+const RESET_SENT = "אם יש חשבון עם האימייל הזה, נשלח אליו קישור לאיפוס סיסמה.";
 
 export default function AuthPage() {
-  const [params] = useSearchParams();
-  const nav = useNavigate();
-  const [mode, setMode] = useState<"in" | "up" | "reset">(params.get("new") ? "up" : "in");
-  const [f, setF] = useState({ name: "", email: "", password: "" });
-  const [msg, setMsg] = useState("");
-  const [busy, setBusy] = useState(false);
+  const { auth, isDemo } = useServices();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const [mode, setMode] = useState<AuthMode>(searchParams.get("new") ? "signUp" : "signIn");
+  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [message, setMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const updateForm = (changes: Partial<typeof form>) => setForm({ ...form, ...changes });
+  const switchMode = (next: AuthMode) => { setMode(next); setMessage(""); };
 
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    setBusy(true); setMsg("");
-    const email = f.email.trim();
-    const err = mode === "up" ? await auth.signUp(email, f.password, f.name.trim())
-      : mode === "in" ? await auth.signIn(email, f.password)
-      : (await auth.reset(email)) ?? "אם יש חשבון עם האימייל הזה, נשלח אליו קישור לאיפוס סיסמה.";
-    setBusy(false);
-    if (err) setMsg(err); else nav("/");
+  /** Returns a message to show, or null on success. */
+  async function authenticate(): Promise<string | null> {
+    const email = form.email.trim();
+    if (mode === "signUp") return auth.signUp(email, form.password, form.name.trim());
+    if (mode === "signIn") return auth.signIn(email, form.password);
+    return (await auth.requestPasswordReset(email)) ?? RESET_SENT;
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setSubmitting(true); setMessage("");
+    const problem = await authenticate();
+    setSubmitting(false);
+    if (problem) setMessage(problem); else navigate("/");
   }
 
   return (
     <div className="center">
       <form className="card auth" onSubmit={submit}>
         <Link to="/" className="brand"><span className="brand-mark" aria-hidden />PrepStack</Link>
-        <h2>{mode === "up" ? "יצירת חשבון" : mode === "in" ? "התחברות" : "איפוס סיסמה"}</h2>
-        {DEMO && <p className="muted">מצב הדגמה: אפשר להזין כל אימייל וסיסמה.</p>}
-        {mode === "up" && <label>שם<input required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoComplete="name" /></label>}
-        <label>אימייל<input required type="email" dir="ltr" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} autoComplete="email" /></label>
-        {mode !== "reset" && <label>סיסמה<input required type="password" dir="ltr" minLength={6} value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} autoComplete={mode === "up" ? "new-password" : "current-password"} /></label>}
-        {msg && <div className="error" role="alert">{msg}</div>}
-        <button className="btn primary big" disabled={busy}>{busy ? "רגע…" : mode === "up" ? "הרשמה" : mode === "in" ? "כניסה" : "שליחת קישור"}</button>
+        <h2>{HEADINGS[mode]}</h2>
+        {isDemo && <p className="muted">מצב הדגמה: אפשר להזין כל אימייל וסיסמה.</p>}
+        {mode === "signUp" && <label>שם<input required value={form.name} onChange={(event) => updateForm({ name: event.target.value })} autoComplete="name" /></label>}
+        <label>אימייל<input required type="email" dir="ltr" value={form.email} onChange={(event) => updateForm({ email: event.target.value })} autoComplete="email" /></label>
+        {mode !== "reset" && <label>סיסמה<input required type="password" dir="ltr" minLength={6} value={form.password} onChange={(event) => updateForm({ password: event.target.value })}
+          autoComplete={mode === "signUp" ? "new-password" : "current-password"} /></label>}
+        {message && <div className="error" role="alert">{message}</div>}
+        <button className="btn primary big" disabled={submitting}>{submitting ? "רגע…" : SUBMIT_LABELS[mode]}</button>
         <div className="auth-links">
-          {mode !== "up" && <button type="button" className="link" onClick={() => { setMode("up"); setMsg(""); }}>אין לי חשבון</button>}
-          {mode !== "in" && <button type="button" className="link" onClick={() => { setMode("in"); setMsg(""); }}>יש לי חשבון</button>}
-          {mode === "in" && <button type="button" className="link" onClick={() => { setMode("reset"); setMsg(""); }}>שכחתי סיסמה</button>}
+          {mode !== "signUp" && <button type="button" className="link" onClick={() => switchMode("signUp")}>אין לי חשבון</button>}
+          {mode !== "signIn" && <button type="button" className="link" onClick={() => switchMode("signIn")}>יש לי חשבון</button>}
+          {mode === "signIn" && <button type="button" className="link" onClick={() => switchMode("reset")}>שכחתי סיסמה</button>}
         </div>
       </form>
     </div>

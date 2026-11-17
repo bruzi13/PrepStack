@@ -1,13 +1,11 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { SUPABASE_URL } from "../../../shared/config";
 
-const URL_ = SUPABASE_URL;
-
 /** Server-side Supabase client with the service role key: bypasses Row Level Security, never sent to the browser. */
 export function admin(): SupabaseClient {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!URL_ || !key) throw new Error("Server is missing SUPABASE_SERVICE_ROLE_KEY (set it in Netlify environment variables)");
-  return createClient(URL_, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  if (!SUPABASE_URL || !key) throw new Error("Server is missing SUPABASE_SERVICE_ROLE_KEY (set it in Netlify environment variables)");
+  return createClient(SUPABASE_URL, key, { auth: { persistSession: false, autoRefreshToken: false } });
 }
 
 /** Who is calling? Checks the Supabase session token the site sends. */
@@ -26,6 +24,3 @@ export async function underDailyLimit(db: SupabaseClient, userId: string): Promi
     .eq("user_id", userId).gte("created_at", since.toISOString());
   return (count ?? 0) <= limit;
 }
-
-export const jsonLegacy = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });

@@ -1,175 +1,152 @@
-// Sign-up questionnaire. It adapts in two ways: which questions appear depends on earlier answers,
-// and the placement quiz at the end picks each next question by how the previous one went.
-import { useMemo, useState } from "react";
+// Sign-up questionnaire. It adapts in two ways: which questions appear depends on earlier answers, and the
+// placement quiz at the end picks each next question by how the previous one went.
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { IMPROVE_GOALS, LEVELS, ROLES, TARGET_LEVELS } from "@shared/catalog";
-import { useApp } from "@/app/AppContext";
-import { runJob } from "@/services/ai";
-import { createPlan } from "@/services/plans";
-import type { Answers } from "@/types";
-import { Busy, ErrorBox } from "@/components/ui";
+import { useServices, useSession } from "@/app/AppContext";
+import { OnboardingQuestionnaire, type QuestionnaireStep } from "@/domain/OnboardingQuestionnaire";
+import { PlacementTest } from "@/domain/PlacementTest";
+import type { OnboardingAnswers } from "@/domain/records";
+import { ErrorMessage, Loading } from "@/components/ui";
 
-const OCCUPATIONS = [
+const OCCUPATIONS: [key: string, label: string][] = [
   ["developer", "מפתח/ת בתעשייה"], ["student", "סטודנט/ית למדעי המחשב או הנדסה"], ["bootcamp", "בוגר/ת בוטקמפ או קורס"],
   ["adjacent", "QA / DevOps / Data / IT שרוצה להתקדם או לעבור תחום"], ["switcher", "מסב/ה מקצוע מתחום אחר"], ["manager", "מנהל/ת או ראש צוות"],
-] as const;
+];
+const INTERVIEW_LANGUAGES: [key: string, label: string][] = [["he", "עברית"], ["en", "אנגלית"], ["both", "גם וגם"]];
+const DONT_KNOW = -1;
 
-const TARGET_FROM: Record<string, string> = { student: "junior", junior: "junior", mid: "mid", senior: "senior", staff: "staff" };
-
-interface DQ { id: string; area: string; level: number; question: string; options: string[]; answer: number; explain: string }
-type Step = "who" | "level" | "role" | "stack" | "improve" | "newstack" | "time" | "quiz" | "build";
+type Phase = "questionnaire" | "loadingPlacement" | "placement" | "buildingPlan";
 
 export default function Onboarding() {
-  const { user, profile, saveProfile } = useApp();
-  const nav = useNavigate();
-  const [a, setA] = useState<Answers>({ improve: [], hours_per_week: 5, interview_lang: "he", ...(profile?.answers ?? {}) });
-  const [name, setName] = useState(profile?.display_name ?? user?.name ?? "");
-  const [i, setI] = useState(0);
-  const [err, setErr] = useState("");
-  const [phase, setPhase] = useState<"form" | "loading-quiz" | "quiz" | "building">("form");
-  const [quiz, setQuiz] = useState<{ areas: string[]; questions: DQ[] } | null>(null);
-  const [q, setQ] = useState<{ area: number; second: boolean; firstOk: boolean; picked: number | null }>({ area: 0, second: false, firstOk: false, picked: null });
-  const [levels, setLevels] = useState<Record<string, number>>({});
-  const set = (patch: Partial<Answers>) => setA((x) => ({ ...x, ...patch }));
+  const { user, profile, saveProfile } = useSession();
+  const { onboarding } = useServices();
+  const navigate = useNavigate();
+  const [answers, setAnswers] = useState<OnboardingAnswers>({ improve: [], hours_per_week: 5, interview_lang: "he", ...(profile?.answers ?? {}) });
+  const [displayName, setDisplayName] = useState(profile?.displayName ?? user?.name ?? "");
+  const [stepIndex, setStepIndex] = useState(0);
+  const [error, setError] = useState("");
+  const [phase, setPhase] = useState<Phase>("questionnaire");
+  const [placement, setPlacement] = useState<PlacementTest | null>(null);
+  const updateAnswers = (changes: Partial<OnboardingAnswers>) => setAnswers((current) => ({ ...current, ...changes }));
 
-  // The path through the questionnaire depends on the answers so far.
-  const steps = useMemo<Step[]>(() => {
-    const s: Step[] = ["who"];
-    s.push("level", "role");
-    if (a.occupation !== "switcher") s.push("stack");
-    s.push("improve");
-    if (a.improve?.includes("new_stack")) s.push("newstack");
-    s.push("time");
-    return s;
-  }, [a.occupation, a.improve]);
-  const step = steps[Math.min(i, steps.length - 1)];
+  const questionnaire = new OnboardingQuestionnaire(answers, displayName);
+  const steps = questionnaire.steps;
+  const step = steps[Math.min(stepIndex, steps.length - 1)];
+  const isLastStep = stepIndex >= steps.length - 1;
 
-  const canNext = step === "who" ? !!a.occupation && !!name.trim()
-    : step === "level" ? !!a.level
-    : step === "role" ? !!a.role && (a.role !== "other" || !!a.role_title?.trim()) && !!a.target_level
-    : step === "improve" ? (a.improve?.length ?? 0) > 0 : true;
-
-  function finalAnswers(): Answers {
-    const role_title = a.role === "other" ? a.role_title : ROLES.find((r) => r.key === a.role)?.title;
-    return { ...a, level: a.level ?? "junior", role_title };
-  }
-
-  async function next() {
-    // Suggest the level of role that matches their experience; they can change it.
-    if (step === "level" && !a.target_level) set({ target_level: TARGET_FROM[a.level ?? "junior"] ?? "mid" });
-    if (i < steps.length - 1) { setI(i + 1); return; }
-    setPhase("loading-quiz"); setErr("");
+  async function continueQuestionnaire() {
+    if (step === "level" && !answers.target_level) updateAnswers({ target_level: OnboardingQuestionnaire.suggestedTargetLevel(answers.level) });
+    if (!isLastStep) { setStepIndex(stepIndex + 1); return; }
+    setPhase("loadingPlacement"); setError("");
     try {
-      const r = await runJob<{ areas: string[]; questions: DQ[] }>("diagnostic", { answers: finalAnswers() }, user!.id);
-      setQuiz(r); setPhase("quiz");
-    } catch (e) { setErr((e as Error).message); setPhase("form"); }
+      setPlacement(PlacementTest.start(await onboarding.createPlacementQuiz(questionnaire.finalAnswers())));
+      setPhase("placement");
+    } catch (failure) { setError((failure as Error).message); setPhase("questionnaire"); }
   }
 
-  // Adaptive placement: every area starts at the middle level; a right answer leads to the hard question, a wrong one to the easy one.
-  const current = (() => {
-    if (!quiz) return null;
-    const area = quiz.areas[q.area];
-    const level = !q.second ? 2 : q.firstOk ? 3 : 1;
-    return quiz.questions.find((x) => x.area === area && x.level === level) ?? quiz.questions.find((x) => x.area === area) ?? null;
-  })();
-
-  function answer(idx: number) {
-    if (!quiz || !current) return;
-    const ok = idx === current.answer;
-    if (!q.second) { setQ({ ...q, second: true, firstOk: ok, picked: null }); return; }
-    const reached = q.firstOk ? (ok ? 3 : 2) : ok ? 1 : 0;
-    const nextLevels = { ...levels, [quiz.areas[q.area]]: reached };
-    setLevels(nextLevels);
-    if (q.area + 1 < quiz.areas.length) setQ({ area: q.area + 1, second: false, firstOk: false, picked: null });
-    else build(nextLevels);
-  }
-
-  async function build(diagnostic: Record<string, number>) {
-    setPhase("building"); setErr("");
+  async function buildPlan(levelsByArea: Record<string, number>) {
+    if (!user) return;
+    setPhase("buildingPlan"); setError("");
     try {
-      const answers = { ...finalAnswers(), diagnostic };
-      const p = await saveProfile({ display_name: name.trim(), role_key: answers.role ?? null, answers });
-      await createPlan(user!, p, "main");
-      await saveProfile({ display_name: name.trim(), role_key: answers.role ?? null, answers: { ...answers, onboarded: true } });
-      nav("/plan");
-    } catch (e) { setErr((e as Error).message); }
+      await onboarding.complete(user, displayName.trim(), { ...questionnaire.finalAnswers(), diagnostic: levelsByArea }, saveProfile);
+      navigate("/plan");
+    } catch (failure) { setError((failure as Error).message); }
   }
 
-  if (phase === "loading-quiz") return <div className="center"><Busy label="מכין מבחן מיקום…" /></div>;
-  if (phase === "building") return (
+  function answerPlacement(optionIndex: number) {
+    if (!placement) return;
+    const next = placement.answer(optionIndex);
+    setPlacement(next);
+    if (next.isFinished) void buildPlan({ ...next.levelsByArea });
+  }
+
+  if (phase === "loadingPlacement") return <div className="center"><Loading label="מכין מבחן מיקום…" /></div>;
+  if (phase === "buildingPlan") return (
     <div className="center"><div className="card narrow">
-      {err ? <ErrorBox msg={err} retry={() => build(levels)} /> : <Busy label="בונה תוכנית…" hint="זה לוקח דקה או שתיים" />}
+      {error ? <ErrorMessage message={error} onRetry={() => buildPlan({ ...(placement?.levelsByArea ?? {}) })} /> : <Loading label="בונה תוכנית…" hint="זה לוקח דקה או שתיים" />}
     </div></div>
   );
 
-  if (phase === "quiz" && quiz && current) {
-    const done = q.area * 2 + (q.second ? 1 : 0);
+  const placementQuestion = placement?.currentQuestion;
+  if (phase === "placement" && placement && placementQuestion) {
     return (
       <div className="center"><div className="card narrow">
-        <div className="steps-bar"><div style={{ width: `${(done / (quiz.areas.length * 2)) * 100}%` }} /></div>
-        <small className="muted">מבחן מיקום · {current.area} · שאלה {done + 1} מתוך {quiz.areas.length * 2}</small>
-        <h2 className="q-title">{current.question}</h2>
+        <div className="steps-bar"><div style={{ width: `${placement.progressPercent}%` }} /></div>
+        <small className="muted">מבחן מיקום · {placementQuestion.area} · שאלה {placement.answeredCount + 1} מתוך {placement.totalQuestions}</small>
+        <h2 className="q-title">{placementQuestion.question}</h2>
         <div className="options">
-          {current.options.map((o, idx) => <button key={idx} className="option" onClick={() => answer(idx)}>{o}</button>)}
-          <button className="option dim" onClick={() => answer(-1)}>לא יודע/ת</button>
+          {placementQuestion.options.map((option, index) => <button key={index} className="option" onClick={() => answerPlacement(index)}>{option}</button>)}
+          <button className="option dim" onClick={() => answerPlacement(DONT_KNOW)}>לא יודע/ת</button>
         </div>
-        <button className="link" onClick={() => build({})}>דילוג</button>
+        <button className="link" onClick={() => buildPlan({})}>דילוג</button>
       </div></div>
     );
   }
 
   return (
     <div className="center"><div className="card narrow">
-      <div className="steps-bar"><div style={{ width: `${((i + 1) / (steps.length + 1)) * 100}%` }} /></div>
-      {step === "who" && <>
-        <h2>נעים להכיר. מי אתם?</h2>
-        <label>איך לקרוא לכם?<input value={name} onChange={(e) => setName(e.target.value)} /></label>
-        <p className="q-label">מה אתם עושים היום?</p>
-        <div className="options">{OCCUPATIONS.map(([k, t]) => <button key={k} className={`option ${a.occupation === k ? "on" : ""}`} onClick={() => set({ occupation: k })}>{t}</button>)}</div>
-      </>}
-      {step === "level" && <>
-        <h2>כמה ניסיון יש לכם?</h2>
-        <div className="options">{LEVELS.map((l) => <button key={l.key} className={`option ${a.level === l.key ? "on" : ""}`} onClick={() => set({ level: l.key })}>{l.title}</button>)}</div>
-      </>}
-      {step === "role" && <>
-        <h2>לאיזה תפקיד אתם מכוונים?</h2>
-        <div className="options two">
-          {ROLES.map((r) => <button key={r.key} className={`option ${a.role === r.key ? "on" : ""}`} onClick={() => set({ role: r.key })}><b>{r.title}</b><small>{r.hint}</small></button>)}
-          <button className={`option ${a.role === "other" ? "on" : ""}`} onClick={() => set({ role: "other" })}><b>תפקיד אחר</b><small>כתבו בעצמכם</small></button>
-        </div>
-        {a.role === "other" && <label>שם התפקיד<input dir="auto" value={a.role_title ?? ""} onChange={(e) => set({ role_title: e.target.value })} placeholder="למשל: Embedded Engineer, Solutions Architect" /></label>}
-        <p className="q-label">באיזו רמה התפקיד שאתם מחפשים?</p>
-        <div className="seg">{TARGET_LEVELS.map(([k, t]) => <button key={k} className={a.target_level === k ? "on" : ""} onClick={() => set({ target_level: k })}>{t}</button>)}</div>
-      </>}
-      {step === "stack" && <>
-        <h2>עם מה אתם עובדים היום?</h2>
-        <label>שפות, פריימוורקים וכלים שאתם מכירים טוב<textarea dir="auto" rows={3} value={a.stack ?? ""} onChange={(e) => set({ stack: e.target.value })} placeholder="למשל: Node.js, TypeScript, PostgreSQL, AWS, קצת Kubernetes" /></label>
-      </>}
-      {step === "improve" && <>
-        <h2>במה אתם רוצים להשתפר?</h2>
-        <p className="muted">אפשר לבחור כמה.</p>
-        <div className="options two">{IMPROVE_GOALS.map((g) => {
-          const on = a.improve?.includes(g.key);
-          return <button key={g.key} className={`option ${on ? "on" : ""}`} onClick={() => set({ improve: on ? a.improve!.filter((x) => x !== g.key) : [...(a.improve ?? []), g.key] })}>{g.title}</button>;
-        })}</div>
-        <label>משהו נוסף שחשוב לכם? (לא חובה)<textarea dir="auto" rows={2} value={a.improve_note ?? ""} onChange={(e) => set({ improve_note: e.target.value })} placeholder="למשל: נכשלתי פעמיים בשלב ה-System Design ואני לא יודע/ת למה" /></label>
-      </>}
-      {step === "newstack" && <>
-        <h2>איזו טכנולוגיה חדשה תרצו ללמוד?</h2>
-        <label>סטאק או טכנולוגיה<input dir="auto" value={a.new_stack ?? ""} onChange={(e) => set({ new_stack: e.target.value })} placeholder="למשל: Go, Kubernetes, React, Kafka, Rust" /></label>
-      </>}
-      {step === "time" && <>
-        <h2>כמה זמן יש לנו?</h2>
-        <label>יש לכם ראיון בתאריך ידוע? (לא חובה)<input type="date" value={a.interview_date ?? ""} onChange={(e) => set({ interview_date: e.target.value })} /></label>
-        <label>כמה שעות בשבוע תוכלו להשקיע? <b>{a.hours_per_week}</b><input type="range" min={1} max={20} value={a.hours_per_week ?? 5} onChange={(e) => set({ hours_per_week: Number(e.target.value) })} /></label>
-        <p className="q-label">באיזו שפה תתראיינו?</p>
-        <div className="seg">{[["he", "עברית"], ["en", "אנגלית"], ["both", "גם וגם"]].map(([k, t]) => <button key={k} className={a.interview_lang === k ? "on" : ""} onClick={() => set({ interview_lang: k })}>{t}</button>)}</div>
-      </>}
-      <ErrorBox msg={err} />
+      <div className="steps-bar"><div style={{ width: `${((stepIndex + 1) / (steps.length + 1)) * 100}%` }} /></div>
+      <QuestionnaireStepView step={step} answers={answers} update={updateAnswers} displayName={displayName} setDisplayName={setDisplayName} />
+      <ErrorMessage message={error} />
       <div className="row between wizard-nav">
-        <button className="btn ghost" disabled={i === 0} onClick={() => setI(i - 1)}>חזרה</button>
-        <button className="btn primary" disabled={!canNext} onClick={next}>{i < steps.length - 1 ? "המשך" : "למבחן המיקום"}</button>
+        <button className="btn ghost" disabled={stepIndex === 0} onClick={() => setStepIndex(stepIndex - 1)}>חזרה</button>
+        <button className="btn primary" disabled={!questionnaire.canContinueFrom(step)} onClick={continueQuestionnaire}>{isLastStep ? "למבחן המיקום" : "המשך"}</button>
       </div>
     </div></div>
   );
+}
+
+function QuestionnaireStepView({ step, answers, update, displayName, setDisplayName }: {
+  step: QuestionnaireStep; answers: OnboardingAnswers; update: (changes: Partial<OnboardingAnswers>) => void;
+  displayName: string; setDisplayName: (name: string) => void;
+}) {
+  const selected = (isOn: boolean) => `option ${isOn ? "on" : ""}`;
+  switch (step) {
+    case "who": return <>
+      <h2>נעים להכיר. מי אתם?</h2>
+      <label>איך לקרוא לכם?<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label>
+      <p className="q-label">מה אתם עושים היום?</p>
+      <div className="options">{OCCUPATIONS.map(([key, label]) => <button key={key} className={selected(answers.occupation === key)} onClick={() => update({ occupation: key })}>{label}</button>)}</div>
+    </>;
+    case "level": return <>
+      <h2>כמה ניסיון יש לכם?</h2>
+      <div className="options">{LEVELS.map((level) => <button key={level.key} className={selected(answers.level === level.key)} onClick={() => update({ level: level.key })}>{level.title}</button>)}</div>
+    </>;
+    case "role": return <>
+      <h2>לאיזה תפקיד אתם מכוונים?</h2>
+      <div className="options two">
+        {ROLES.map((role) => <button key={role.key} className={selected(answers.role === role.key)} onClick={() => update({ role: role.key })}><b>{role.title}</b><small>{role.hint}</small></button>)}
+        <button className={selected(answers.role === "other")} onClick={() => update({ role: "other" })}><b>תפקיד אחר</b><small>כתבו בעצמכם</small></button>
+      </div>
+      {answers.role === "other" && <label>שם התפקיד<input dir="auto" value={answers.role_title ?? ""} onChange={(event) => update({ role_title: event.target.value })} placeholder="למשל: Embedded Engineer, Solutions Architect" /></label>}
+      <p className="q-label">באיזו רמה התפקיד שאתם מחפשים?</p>
+      <div className="seg">{TARGET_LEVELS.map(([key, label]) => <button key={key} className={answers.target_level === key ? "on" : ""} onClick={() => update({ target_level: key })}>{label}</button>)}</div>
+    </>;
+    case "stack": return <>
+      <h2>עם מה אתם עובדים היום?</h2>
+      <label>שפות, פריימוורקים וכלים שאתם מכירים טוב<textarea dir="auto" rows={3} value={answers.stack ?? ""} onChange={(event) => update({ stack: event.target.value })} placeholder="למשל: Node.js, TypeScript, PostgreSQL, AWS, קצת Kubernetes" /></label>
+    </>;
+    case "improve": return <>
+      <h2>במה אתם רוצים להשתפר?</h2>
+      <p className="muted">אפשר לבחור כמה.</p>
+      <div className="options two">{IMPROVE_GOALS.map((goal) => {
+        const chosen = answers.improve?.includes(goal.key) ?? false;
+        const toggled = chosen ? (answers.improve ?? []).filter((key) => key !== goal.key) : [...(answers.improve ?? []), goal.key];
+        return <button key={goal.key} className={selected(chosen)} onClick={() => update({ improve: toggled })}>{goal.title}</button>;
+      })}</div>
+      <label>משהו נוסף שחשוב לכם? (לא חובה)<textarea dir="auto" rows={2} value={answers.improve_note ?? ""} onChange={(event) => update({ improve_note: event.target.value })} placeholder="למשל: נכשלתי פעמיים בשלב ה-System Design ואני לא יודע/ת למה" /></label>
+    </>;
+    case "newStack": return <>
+      <h2>איזו טכנולוגיה חדשה תרצו ללמוד?</h2>
+      <label>סטאק או טכנולוגיה<input dir="auto" value={answers.new_stack ?? ""} onChange={(event) => update({ new_stack: event.target.value })} placeholder="למשל: Go, Kubernetes, React, Kafka, Rust" /></label>
+    </>;
+    case "time": return <>
+      <h2>כמה זמן יש לנו?</h2>
+      <label>יש לכם ראיון בתאריך ידוע? (לא חובה)<input type="date" value={answers.interview_date ?? ""} onChange={(event) => update({ interview_date: event.target.value })} /></label>
+      <label>כמה שעות בשבוע תוכלו להשקיע? <b>{answers.hours_per_week}</b><input type="range" min={1} max={20} value={answers.hours_per_week ?? 5} onChange={(event) => update({ hours_per_week: Number(event.target.value) })} /></label>
+      <p className="q-label">באיזו שפה תתראיינו?</p>
+      <div className="seg">{INTERVIEW_LANGUAGES.map(([key, label]) => <button key={key} className={answers.interview_lang === key ? "on" : ""} onClick={() => update({ interview_lang: key })}>{label}</button>)}</div>
+    </>;
+  }
 }

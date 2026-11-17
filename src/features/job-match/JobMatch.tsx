@@ -1,64 +1,73 @@
 import { useState } from "react";
-import type { TopicKind } from "@shared/catalog";
-import { useMe } from "@/app/AppContext";
-import { runJob } from "@/services/ai";
-import { addTopics } from "@/services/plans";
-import { db } from "@/services/store";
-import type { Plan, Topic } from "@/types";
-import { Busy, ErrorBox, ScoreRing } from "@/components/ui";
+import { useLearner, useServices } from "@/app/AppContext";
+import type { JobAnalysis } from "@/domain/records";
+import { ErrorMessage, Loading, ScoreRing } from "@/components/ui";
 
-interface JD {
-  role_title: string; company_type: string; fit_summary: string; match_percent: number; must_have: string[]; nice_to_have: string[];
-  gaps: { skill: string; why: string; priority: number }[];
-  suggested_topics: { title: string; description: string; kind: TopicKind; module: string }[];
-  likely_rounds: string[]; questions_to_expect: string[];
-}
+/** The server refuses shorter texts: too little to analyse. */
+const MIN_DESCRIPTION_LENGTH = 80;
 
 export default function JobMatch() {
-  const { user } = useMe();
-  const [text, setText] = useState("");
-  const [r, setR] = useState<JD | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  const [added, setAdded] = useState(false);
+  const { user } = useLearner();
+  const { plans, jobMatch } = useServices();
+  const [description, setDescription] = useState("");
+  const [analysis, setAnalysis] = useState<JobAnalysis | null>(null);
+  const [analysing, setAnalysing] = useState(false);
+  const [error, setError] = useState("");
+  const [addedToPlan, setAddedToPlan] = useState(false);
 
-  async function plan() { return (await db.list<Plan>("prep_plans", { eq: { user_id: user.id, track: "main", active: true } }))[0]; }
   async function analyse() {
-    setBusy(true); setErr(""); setAdded(false);
-    try {
-      setR(await runJob<JD>("jd", { text }, user.id));
-    } catch (e) { setErr((e as Error).message); }
-    setBusy(false);
+    setAnalysing(true); setError(""); setAddedToPlan(false);
+    try { setAnalysis(await jobMatch.analyse(description)); } catch (failure) { setError((failure as Error).message); }
+    setAnalysing(false);
   }
-  async function addAll() {
-    const p = await plan();
-    if (!p || !r) return;
-    const topics = await db.list<Topic>("prep_topics", { eq: { plan_id: p.id } });
-    await addTopics(user, p, r.suggested_topics.map((t) => ({ ...t, module: `משרה: ${r.role_title}`, priority: 1 })), topics.length);
-    setAdded(true);
+
+  async function addSuggestedTopics() {
+    if (!analysis) return;
+    setError("");
+    try {
+      const added = await plans.addSuggestions(user.id, analysis.suggested_topics, `משרה: ${analysis.role_title}`);
+      if (added) setAddedToPlan(true); else setError("אין עדיין תוכנית שאפשר להוסיף אליה.");
+    } catch (failure) { setError((failure as Error).message); }
   }
 
   return (
     <div className="page">
       <div className="page-head"><h1>התאמה למשרה</h1></div>
       <div className="card">
-        <textarea dir="auto" rows={10} value={text} onChange={(e) => setText(e.target.value)} placeholder="תיאור המשרה" />
-        <button className="btn primary" disabled={busy || text.trim().length < 80} onClick={analyse}>ניתוח</button>
+        <textarea dir="auto" rows={10} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="תיאור המשרה" />
+        <button className="btn primary" disabled={analysing || description.trim().length < MIN_DESCRIPTION_LENGTH} onClick={analyse}>ניתוח</button>
       </div>
-      <ErrorBox msg={err} />
-      {busy && <Busy label="מנתח…" />}
-      {r && !busy && <>
-        <div className="card"><div className="review-head"><ScoreRing score={r.match_percent} label="התאמה" /><div><h2>{r.role_title}</h2><small className="muted">{r.company_type}</small><p>{r.fit_summary}</p></div></div></div>
-        <div className="grid2">
-          <div className="card"><h3>דרישות חובה</h3><ul>{r.must_have.map((x, i) => <li key={i}>{x}</li>)}</ul>{r.nice_to_have.length > 0 && <><h4>יתרון</h4><ul>{r.nice_to_have.map((x, i) => <li key={i}>{x}</li>)}</ul></>}</div>
-          <div className="card"><h3>פערים</h3>{r.gaps.length === 0 ? <p className="muted">לא נמצאו פערים משמעותיים.</p> : <ul className="list">{r.gaps.map((g, i) => <li key={i}><div><b>{g.skill}</b> {g.priority === 1 && <span className="pill hot">קריטי</span>}<br /><small className="muted">{g.why}</small></div></li>)}</ul>}</div>
-          <div className="card"><h3>סבבים צפויים</h3><ol>{r.likely_rounds.map((x, i) => <li key={i}>{x}</li>)}</ol></div>
-          <div className="card"><h3>שאלות צפויות</h3><ul>{r.questions_to_expect.map((x, i) => <li key={i}>{x}</li>)}</ul></div>
-        </div>
-        {r.suggested_topics.length > 0 && <div className="card"><h3>נושאים מומלצים</h3>
-          <ul className="list">{r.suggested_topics.map((t) => <li key={t.title}><div><b>{t.title}</b><br /><small className="muted">{t.description}</small></div></li>)}</ul>
-          {added ? <div className="notice">נוסף לתוכנית.</div> : <button className="btn primary" onClick={addAll}>הוספה לתוכנית</button>}</div>}
-      </>}
+      <ErrorMessage message={error} />
+      {analysing && <Loading label="מנתח…" />}
+      {analysis && !analysing && <AnalysisView analysis={analysis} addedToPlan={addedToPlan} onAddToPlan={addSuggestedTopics} />}
     </div>
   );
+}
+
+function AnalysisView({ analysis, addedToPlan, onAddToPlan }: { analysis: JobAnalysis; addedToPlan: boolean; onAddToPlan: () => void }) {
+  return <>
+    <div className="card"><div className="review-head">
+      <ScoreRing score={analysis.match_percent} label="התאמה" />
+      <div><h2>{analysis.role_title}</h2><small className="muted">{analysis.company_type}</small><p>{analysis.fit_summary}</p></div>
+    </div></div>
+    <div className="grid2">
+      <div className="card">
+        <h3>דרישות חובה</h3><ul>{analysis.must_have.map((requirement, index) => <li key={index}>{requirement}</li>)}</ul>
+        {analysis.nice_to_have.length > 0 && <><h4>יתרון</h4><ul>{analysis.nice_to_have.map((advantage, index) => <li key={index}>{advantage}</li>)}</ul></>}
+      </div>
+      <div className="card">
+        <h3>פערים</h3>
+        {analysis.gaps.length === 0 ? <p className="muted">לא נמצאו פערים משמעותיים.</p> : <ul className="list">{analysis.gaps.map((gap, index) => (
+          <li key={index}><div><b>{gap.skill}</b> {gap.priority === 1 && <span className="pill hot">קריטי</span>}<br /><small className="muted">{gap.why}</small></div></li>
+        ))}</ul>}
+      </div>
+      <div className="card"><h3>סבבים צפויים</h3><ol>{analysis.likely_rounds.map((round, index) => <li key={index}>{round}</li>)}</ol></div>
+      <div className="card"><h3>שאלות צפויות</h3><ul>{analysis.questions_to_expect.map((question, index) => <li key={index}>{question}</li>)}</ul></div>
+    </div>
+    {analysis.suggested_topics.length > 0 && <div className="card">
+      <h3>נושאים מומלצים</h3>
+      <ul className="list">{analysis.suggested_topics.map((topic) => <li key={topic.title}><div><b>{topic.title}</b><br /><small className="muted">{topic.description}</small></div></li>)}</ul>
+      {addedToPlan ? <div className="notice">נוסף לתוכנית.</div> : <button className="btn primary" onClick={onAddToPlan}>הוספה לתוכנית</button>}
+    </div>}
+  </>;
 }

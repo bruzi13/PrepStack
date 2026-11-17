@@ -15,23 +15,29 @@
 - `chat` : תור שיחה בסטרימינג (מראיין, עוזר AI בתוך ראיון, מורה בשיעור).
 - `refresh-maps` : רץ כל יום שני ומרענן מהרשת את "מפות התפקיד" שהתיישנו, כדי שהתוכניות יתעדכנו בטכנולוגיות חדשות.
 
-אלגוריתם התאמת הפורמט נמצא ב-`src/learning/adapt.ts` (Thompson sampling: התגמול הוא 75% ציון המבחן ו-25% דירוג הלומד, בהקשר של סוג הנושא). חזרה במרווחים ב-`src/learning/srs.ts`.
+אלגוריתם התאמת הפורמט נמצא ב-`src/domain/FormatSelector.ts` (Thompson sampling: התגמול הוא 75% ציון המבחן ו-25% דירוג הלומד, בהקשר של סוג הנושא). חזרה במרווחים ב-`src/domain/SpacedRepetitionScheduler.ts`.
 
 ## מבנה התיקיות
 
+האתר בנוי בשכבות, וכל שכבה תלויה רק בשכבות שמתחתיה:
+
 ```
 src/
-  app/          נקודת הכניסה, ניתוב, מצב המשתמש המחובר
-  features/     מסך לכל יכולת: auth, onboarding, dashboard, plan, lessons, interviews, insights, job-match, settings
+  domain/       מודלים: מחלקות בלי גישה לרשת או לדאטהבייס (Topic, Lesson, StudyPlan, LearnerProfile, MockInterview,
+                TopicList, ProgressReport, FormatSelector, SpacedRepetitionScheduler, PlacementTest...). records.ts = צורת השורות בדאטהבייס.
+  data/         גישה לנתונים: הממשק Database (Supabase או הדגמה בדפדפן), AuthService, ו-repositories שהופכים שורות למודלים
+  ai/           הממשק AiEngine עם חוזה טיפוסי לכל סוג עבודה; מימוש לשרת ומימוש להדגמה
+  services/     שירותי האפליקציה: PlanService, StudyService, InterviewService, ProgressService, OnboardingService...
+  app/          נקודת הכניסה, ניתוב, AppServices (המקום היחיד שמחליט על המימושים), AppContext (useServices, useLearner)
+  features/     מסך לכל יכולת. מסכים מדברים רק עם services ומודלים, לא עם הדאטהבייס
   components/   רכיבים משותפים: עורך קוד, לוח ארכיטקטורה, צ'אט, תצוגת ביקורת
-  learning/     לוגיקת הלמידה: התאמת פורמט, חזרה במרווחים, הרצת קוד
-  services/     גישה לנתונים ול-AI: Supabase, עבודות AI, תוכניות, מצב הדגמה
   styles/       עיצוב
-  types.ts      טיפוסי הנתונים
-shared/         קוד שמשותף לאתר ולשרת
-netlify/functions/  פונקציות השרת (Claude API)
+shared/         קוד שמשותף לאתר ולשרת (כולל החוזה של לוח התחזוקה)
+netlify/functions/  פונקציות השרת: _core (בקשה, שגיאות, ולידציה, handlers לעבודות), _services, _adapters, _lib (Claude)
 supabase/       סכמת הדאטהבייס
 ```
+
+כללים: מודלים הם immutable (מתודה שמשנה מחזירה מופע חדש); שמות משתנים מלאים (`topic`, לא `t`); מספרי קסם הופכים לקבועים עם שם; מצב הדגמה הוא מימוש נוסף של אותם ממשקים, לא `if (DEMO)` בתוך הקוד.
 
 ייבוא בתוך האתר נעשה עם `@/...` (לתוך `src`) ו-`@shared/...`.
 
