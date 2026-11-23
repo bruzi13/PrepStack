@@ -1,0 +1,75 @@
+{
+  "track": "ai-engineering",
+  "title": "AI Engineering: LLMs, RAG & Agents",
+  "target": "Software engineer → builds and ships AI features and agents",
+  "version": 1,
+  "units": [
+    { "id": "llm-basics", "title": "איך LLM עובד בפועל", "why": "בלי להבין tokens, context וטמפרטורה אי אפשר להסביר למה מודל טועה." },
+    { "id": "prompting", "title": "Prompting ו-context engineering", "why": "רוב איכות המערכת נקבעת במה שמכניסים למודל." },
+    { "id": "tool-use", "title": "Tool use ו-structured outputs", "why": "הגשר בין מודל לקוד: פונקציות, סכמות ותוצאות אמינות." },
+    { "id": "rag", "title": "RAG: חיפוש ושליפה", "why": "הדרך המקובלת לתת למודל ידע עדכני ופרטי, וגם המקום שבו רוב המערכות נשברות." },
+    { "id": "agents", "title": "אייג'נטים", "why": "לולאה שבה המודל מחליט מה לעשות. חזק, יקר, ודורש שליטה." },
+    { "id": "mcp", "title": "MCP", "why": "הסטנדרט לחיבור אייג'נטים לכלים ולמידע." },
+    { "id": "evals", "title": "Evals", "why": "בלי מדידה אין דרך לדעת אם שינוי שיפר או קלקל." },
+    { "id": "production", "title": "AI בפרודקשן", "why": "עלות, latency, אבטחה ו-observability: מה שמפריד דמו ממוצר." },
+    { "id": "coding-agents", "title": "עבודה עם coding agents", "why": "איך מהנדסים עובדים היום, ומה שנבחן בסבבי AI-assisted." },
+    { "id": "ai-design", "title": "System design למוצרי AI", "why": "סבב תכנון שמופיע יותר ויותר: לתכנן מערכת מבוססת LLM מקצה לקצה." }
+  ],
+  "skills": [
+    { "id": "tokens-context", "title": "Tokens & context windows", "goal": "להעריך כמות tokens, להבין מגבלות context ומה קורה כשהן נחצות.", "unit": "llm-basics", "level": "junior", "prereqs": [], "kind": "concept", "exercises": ["mcq", "predict"], "weight": 2 },
+    { "id": "sampling", "title": "Sampling, determinism & reasoning modes", "goal": "להסביר למה תשובות משתנות ומתי מצב חשיבה ממושך עוזר.", "unit": "llm-basics", "level": "junior", "prereqs": ["tokens-context"], "kind": "concept", "exercises": ["mcq", "choose"], "weight": 2 },
+    { "id": "model-selection", "title": "Choosing a model: quality, cost, latency", "goal": "לבחור מודל לכל משימה ולהשוות עלות ל-task שהושלם, לא לבקשה.", "unit": "llm-basics", "level": "mid", "prereqs": ["tokens-context"], "kind": "concept", "exercises": ["choose", "predict"], "weight": 3 },
+    { "id": "llm-failure-modes", "title": "Failure modes: hallucination, sycophancy, drift", "goal": "לזהות מתי מודל ממציא או מסכים בלי סיבה, ולתכנן נגד זה.", "unit": "llm-basics", "level": "mid", "prereqs": ["sampling"], "kind": "concept", "exercises": ["bug", "mcq"], "weight": 3 },
+
+    { "id": "system-prompts", "title": "System prompts & instructions", "goal": "לכתוב הנחיה ברורה: תפקיד, מטרה, אילוצים ופורמט, בלי סתירות.", "unit": "prompting", "level": "junior", "prereqs": ["tokens-context"], "kind": "practical", "exercises": ["bug", "explain", "complete"], "weight": 3 },
+    { "id": "few-shot", "title": "Examples & few-shot", "goal": "לבחור דוגמאות שמלמדות את המודל בלי לגרום לו להעתיק אותן.", "unit": "prompting", "level": "mid", "prereqs": ["system-prompts"], "kind": "practical", "exercises": ["choose", "bug"], "weight": 2 },
+    { "id": "context-engineering", "title": "Context engineering", "goal": "להחליט מה נכנס ל-context, באיזה סדר ובאיזה גודל, כדי שהמודל יקבל את מה שצריך.", "unit": "prompting", "level": "mid", "prereqs": ["system-prompts"], "kind": "practical", "exercises": ["choose", "design", "explain"], "weight": 3 },
+    { "id": "prompt-caching", "title": "Prompt caching", "goal": "לסדר prompt כך שהחלק הקבוע נשמר ב-cache, ולמדוד שזה עובד.", "unit": "prompting", "level": "senior", "prereqs": ["context-engineering"], "kind": "practical", "exercises": ["bug", "predict"], "weight": 1, "excellence": true },
+
+    { "id": "structured-outputs", "title": "Structured outputs & JSON schemas", "goal": "לקבל JSON תקין לפי סכמה, ולטפל בכשלים.", "unit": "tool-use", "level": "junior", "prereqs": ["system-prompts"], "kind": "practical", "exercises": ["complete", "bug"], "weight": 3 },
+    { "id": "function-calling", "title": "Function calling / tool use", "goal": "להגדיר כלים עם שמות, תיאורים וסכמות שהמודל משתמש בהם נכון.", "unit": "tool-use", "level": "mid", "prereqs": ["structured-outputs"], "kind": "practical", "exercises": ["bug", "complete", "choose"], "weight": 3 },
+    { "id": "tool-errors", "title": "Tool errors, validation & retries", "goal": "להחזיר שגיאות כלי שהמודל יודע להתאושש מהן, ולאמת קלט לפני הרצה.", "unit": "tool-use", "level": "mid", "prereqs": ["function-calling"], "kind": "practical", "exercises": ["bug", "explain"], "weight": 2 },
+    { "id": "streaming", "title": "Streaming responses", "goal": "להזרים תשובות לממשק ולטפל בניתוק ובתשובה חלקית.", "unit": "tool-use", "level": "mid", "prereqs": ["structured-outputs"], "kind": "practical", "exercises": ["bug", "predict"], "weight": 2 },
+
+    { "id": "embeddings", "title": "Embeddings & semantic similarity", "goal": "להסביר embedding, מרחק וקטורי ומה הוא תופס ומה לא.", "unit": "rag", "level": "junior", "prereqs": ["tokens-context"], "kind": "concept", "exercises": ["mcq", "predict"], "weight": 3 },
+    { "id": "chunking", "title": "Chunking & document preparation", "goal": "לפרק מסמכים לחלקים שנשלפים טוב, עם מטא-דאטה נכון.", "unit": "rag", "level": "mid", "prereqs": ["embeddings"], "kind": "practical", "exercises": ["choose", "bug"], "weight": 3 },
+    { "id": "vector-stores", "title": "Vector databases & indexes", "goal": "לבחור אחסון וקטורי (pgvector, ייעודי) ולהבין ANN ו-recall.", "unit": "rag", "level": "mid", "prereqs": ["embeddings"], "kind": "concept", "exercises": ["choose", "mcq"], "weight": 2 },
+    { "id": "hybrid-search", "title": "Hybrid search & reranking", "goal": "לשלב חיפוש מילולי וסמנטי ולהוסיף reranker כשצריך.", "unit": "rag", "level": "senior", "prereqs": ["vector-stores"], "kind": "practical", "exercises": ["choose", "predict"], "weight": 2 },
+    { "id": "rag-pipeline", "title": "End-to-end RAG pipeline", "goal": "לבנות RAG מקצה לקצה: שליפה, הרכבת context, תשובה עם מקורות.", "unit": "rag", "level": "mid", "prereqs": ["chunking", "structured-outputs"], "kind": "design", "exercises": ["design", "order", "bug"], "weight": 3 },
+    { "id": "rag-evaluation", "title": "Evaluating retrieval & answers", "goal": "למדוד בנפרד את איכות השליפה ואת איכות התשובה.", "unit": "rag", "level": "senior", "prereqs": ["rag-pipeline"], "kind": "practical", "exercises": ["choose", "explain"], "weight": 2 },
+    { "id": "rag-permissions-freshness", "title": "Permissions & freshness in RAG", "goal": "למנוע שליפה של מידע שהמשתמש לא מורשה לראות ולשמור את האינדקס עדכני.", "unit": "rag", "level": "senior", "prereqs": ["rag-pipeline"], "kind": "design", "exercises": ["bug", "design"], "weight": 2, "excellence": true },
+    { "id": "rag-vs-finetune", "title": "RAG vs fine-tuning vs long context", "goal": "להחליט בין RAG, fine-tuning והכנסת הכל ל-context.", "unit": "rag", "level": "mid", "prereqs": ["rag-pipeline"], "kind": "concept", "exercises": ["choose", "explain"], "weight": 3 },
+
+    { "id": "workflows-vs-agents", "title": "Workflows vs agents", "goal": "להחליט מתי מספיק workflow קבוע ומתי באמת צריך אייג'נט.", "unit": "agents", "level": "mid", "prereqs": ["function-calling"], "kind": "concept", "exercises": ["choose", "explain"], "weight": 3 },
+    { "id": "agent-loop", "title": "The agent loop", "goal": "לממש לולאת אייג'נט: מודל, כלים, תוצאות ותנאי עצירה.", "unit": "agents", "level": "mid", "prereqs": ["workflows-vs-agents", "tool-errors"], "kind": "coding", "exercises": ["code", "order", "bug"], "weight": 3 },
+    { "id": "agent-memory", "title": "Memory & state", "goal": "לתכנן זיכרון לטווח קצר וארוך: מה נשמר, איפה, ומתי מנקים.", "unit": "agents", "level": "senior", "prereqs": ["agent-loop"], "kind": "design", "exercises": ["design", "choose"], "weight": 2 },
+    { "id": "planning-decomposition", "title": "Planning & task decomposition", "goal": "לגרום לאייג'נט לפרק משימה ולבדוק את עצמו בדרך.", "unit": "agents", "level": "senior", "prereqs": ["agent-loop"], "kind": "practical", "exercises": ["choose", "explain"], "weight": 2 },
+    { "id": "multi-agent", "title": "Multi-agent orchestration", "goal": "להחליט מתי לפצל לכמה אייג'נטים ואיך הם מעבירים עבודה זה לזה.", "unit": "agents", "level": "senior", "prereqs": ["planning-decomposition"], "kind": "design", "exercises": ["design", "choose"], "weight": 2 },
+    { "id": "human-in-the-loop", "title": "Human in the loop & approvals", "goal": "לשים נקודות אישור לפני פעולות מסוכנות ולתכנן חוויה סביבן.", "unit": "agents", "level": "mid", "prereqs": ["agent-loop"], "kind": "design", "exercises": ["bug", "design"], "weight": 2 },
+    { "id": "agent-budgets", "title": "Budgets, limits & stopping", "goal": "להגביל אייג'נט בזמן, tokens וצעדים, ולסיים בצורה מסודרת.", "unit": "agents", "level": "senior", "prereqs": ["agent-loop"], "kind": "practical", "exercises": ["bug", "choose"], "weight": 2, "excellence": true },
+
+    { "id": "mcp-basics", "title": "MCP concepts: tools, resources, prompts", "goal": "להסביר מה MCP מגדיר ואיך לקוח ושרת מדברים.", "unit": "mcp", "level": "mid", "prereqs": ["function-calling"], "kind": "concept", "exercises": ["mcq", "order"], "weight": 2 },
+    { "id": "mcp-server", "title": "Building an MCP server", "goal": "לבנות שרת MCP שחושף כלים מוגדרים היטב לנתונים של מערכת.", "unit": "mcp", "level": "senior", "prereqs": ["mcp-basics"], "kind": "coding", "exercises": ["code", "bug"], "weight": 2 },
+    { "id": "mcp-security", "title": "MCP security & permissions", "goal": "לצמצם הרשאות של כלים ולהגן מפני כלי זדוני או מידע מורעל.", "unit": "mcp", "level": "senior", "prereqs": ["mcp-server", "prompt-injection"], "kind": "concept", "exercises": ["bug", "explain"], "weight": 1, "excellence": true },
+
+    { "id": "golden-sets", "title": "Golden datasets & test cases", "goal": "לבנות סט בדיקות מייצג ממקרים אמיתיים, כולל מקרי קצה.", "unit": "evals", "level": "mid", "prereqs": ["structured-outputs"], "kind": "practical", "exercises": ["choose", "explain"], "weight": 3 },
+    { "id": "llm-as-judge", "title": "LLM-as-judge & rubrics", "goal": "לכתוב רובריקה למודל-שופט ולבדוק שהשופט עצמו אמין.", "unit": "evals", "level": "senior", "prereqs": ["golden-sets"], "kind": "practical", "exercises": ["bug", "complete"], "weight": 2 },
+    { "id": "regression-evals", "title": "Regression evals in CI", "goal": "להריץ evals על כל שינוי בפרומפט או במודל ולחסום ירידה באיכות.", "unit": "evals", "level": "senior", "prereqs": ["golden-sets"], "kind": "practical", "exercises": ["order", "choose"], "weight": 2, "excellence": true },
+    { "id": "agent-evals", "title": "Evaluating agents", "goal": "למדוד אייג'נט לפי תוצאה, מסלול ועלות, לא רק לפי התשובה האחרונה.", "unit": "evals", "level": "senior", "prereqs": ["regression-evals", "agent-loop"], "kind": "concept", "exercises": ["choose", "explain"], "weight": 2 },
+
+    { "id": "cost-latency", "title": "Cost & latency optimization", "goal": "להוריד עלות ו-latency עם caching, מודל מתאים, batching ו-streaming.", "unit": "production", "level": "mid", "prereqs": ["model-selection"], "kind": "practical", "exercises": ["choose", "predict"], "weight": 3 },
+    { "id": "prompt-injection", "title": "Prompt injection & untrusted input", "goal": "לזהות prompt injection ולהפריד הוראות מנתונים בתכנון המערכת.", "unit": "production", "level": "mid", "prereqs": ["system-prompts"], "kind": "concept", "exercises": ["bug", "mcq"], "weight": 3 },
+    { "id": "guardrails", "title": "Guardrails & output validation", "goal": "לבדוק קלט ופלט, לטפל בסירובים ובתשובות לא תקינות.", "unit": "production", "level": "mid", "prereqs": ["structured-outputs"], "kind": "practical", "exercises": ["bug", "design"], "weight": 2 },
+    { "id": "llm-observability", "title": "Tracing & observability for LLM apps", "goal": "לעקוב אחרי כל קריאה: prompt, tokens, עלות, latency ותוצאה.", "unit": "production", "level": "senior", "prereqs": ["cost-latency"], "kind": "practical", "exercises": ["choose", "bug"], "weight": 2 },
+    { "id": "fallbacks-rate-limits", "title": "Rate limits, fallbacks & reliability", "goal": "להתמודד עם 429, תקלות ספק וסירובים בלי להפיל את המוצר.", "unit": "production", "level": "mid", "prereqs": ["cost-latency"], "kind": "practical", "exercises": ["bug", "design"], "weight": 2 },
+    { "id": "background-ai-jobs", "title": "Async & background AI jobs", "goal": "להוציא עבודות AI ארוכות לרקע כך שהמשתמש לא מחכה מול ספינר.", "unit": "production", "level": "mid", "prereqs": ["fallbacks-rate-limits"], "kind": "design", "exercises": ["design", "choose"], "weight": 2, "excellence": true },
+
+    { "id": "agentic-coding", "title": "Directing a coding agent", "goal": "לנסח משימה, לתת context נכון ולפרק עבודה גדולה לצעדים שאפשר לבדוק.", "unit": "coding-agents", "level": "junior", "prereqs": [], "kind": "practical", "exercises": ["choose", "explain"], "weight": 3 },
+    { "id": "verifying-ai-code", "title": "Reviewing & verifying AI-written code", "goal": "למצוא את הבאגים הטיפוסיים בקוד שנכתב ב-AI ולאמת עם בדיקות.", "unit": "coding-agents", "level": "mid", "prereqs": ["agentic-coding"], "kind": "practical", "exercises": ["bug", "explain"], "weight": 3 },
+    { "id": "ai-assisted-interview", "title": "The AI-assisted interview round", "goal": "לעבוד עם עוזר AI בראיון: מה להאציל, מה לבדוק ואיך להסביר כל שורה.", "unit": "coding-agents", "level": "mid", "prereqs": ["verifying-ai-code"], "kind": "practical", "exercises": ["choose", "story"], "weight": 3 },
+
+    { "id": "design-support-bot", "title": "Design: support assistant over company docs", "goal": "לתכנן עוזר תמיכה עם RAG, מקורות, הרשאות ומעבר לנציג.", "unit": "ai-design", "level": "senior", "prereqs": ["rag-pipeline", "rag-permissions-freshness", "guardrails"], "kind": "design", "exercises": ["design"], "weight": 3 },
+    { "id": "design-agentic-workflow", "title": "Design: agent that completes a business task", "goal": "לתכנן אייג'נט עם כלים, אישורים, תקציב ו-evals.", "unit": "ai-design", "level": "senior", "prereqs": ["multi-agent", "human-in-the-loop", "agent-evals"], "kind": "design", "exercises": ["design"], "weight": 3 },
+    { "id": "design-ai-tutor", "title": "Design: personalized AI tutor", "goal": "לתכנן מורה אישי: מודל לומד, RAG על תוכן, אייג'נט ברקע ובדיקת איכות. (זה האתר הזה.)", "unit": "ai-design", "level": "senior", "prereqs": ["rag-pipeline", "agent-memory", "background-ai-jobs"], "kind": "design", "exercises": ["design", "story"], "weight": 2, "excellence": true }
+  ]
+}
